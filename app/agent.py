@@ -87,12 +87,42 @@ def run_turn(
 
         # Execute every tool the model requested in this round.
         for tc in tool_calls:
-            name = tc["function"]["name"]
-            raw = tc["function"]["arguments"]
-            # Real LLM returns JSON string; fake LLM may return a dict.
-            args = json.loads(raw) if isinstance(raw, str) else raw
+            func_meta = tc.get("function") or {}
+            name = func_meta.get("name", "unknown")
+            raw = func_meta.get("arguments", "{}")
 
-            result = dispatch(conn, name, args)
+            args = None
+            result = None
+
+            if isinstance(raw, dict):
+                args = raw
+            elif isinstance(raw, str):
+                try:
+                    args = json.loads(raw)
+                except Exception as e:
+                    args = {"raw": raw}
+                    result = {
+                        "ok": False,
+                        "success": False,
+                        "error": f"Malformed JSON arguments for tool '{name}': {e}",
+                    }
+            else:
+                args = {"raw": str(raw)}
+                result = {
+                    "ok": False,
+                    "success": False,
+                    "error": f"Invalid arguments type for tool '{name}'. Expected JSON string.",
+                }
+
+            if result is None:
+                if not isinstance(args, dict):
+                    result = {
+                        "ok": False,
+                        "success": False,
+                        "error": f"Tool arguments for '{name}' must decode to a JSON object.",
+                    }
+                else:
+                    result = dispatch(conn, name, args)
 
             trace.append({
                 "tool": name,
@@ -106,7 +136,7 @@ def run_turn(
 
             messages.append({
                 "role": "tool",
-                "tool_call_id": tc["id"],
+                "tool_call_id": tc.get("id", "call_unknown"),
                 "content": json.dumps(result),
             })
 

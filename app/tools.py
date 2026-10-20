@@ -8,8 +8,11 @@ the LLM hallucinates a bad call, the database stays correct.
 Set GUARD=off (env var) to disable guards for evaluation ablation only.
 """
 
+import inspect
 import logging
+import math
 import os
+import re
 import sqlite3
 from datetime import date
 
@@ -42,7 +45,48 @@ def _block(rule: str, detail: str) -> dict:
     easy to search logs for "blocked_violation".
     """
     log.warning("blocked_violation rule=%s %s", rule, detail)
-    return {"ok": False, "error": f"Policy violation (rule {rule}): {detail}"}
+    return {
+        "ok": False,
+        "success": False,
+        "error": f"Policy violation (rule {rule}): {detail}",
+    }
+
+
+def _validate_order_id(order_id: any) -> tuple[bool, str | None]:
+    if isinstance(order_id, bool) or not isinstance(order_id, int) or order_id <= 0:
+        return False, "Invalid order_id: must be a positive integer."
+    return True, None
+
+
+def _validate_email(email: any) -> tuple[bool, str | None, str]:
+    if not isinstance(email, str):
+        return False, "Invalid email: must be a string.", ""
+    email_clean = email.strip().casefold()
+    if not email_clean or "@" not in email_clean or len(email_clean) > 254:
+        return False, "Invalid email: must be a valid email string.", ""
+    return True, None, email_clean
+
+
+def _validate_address(address: any) -> tuple[bool, str | None, str]:
+    if not isinstance(address, str):
+        return False, "Invalid address: must be a string.", ""
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", address).strip()
+    if not cleaned:
+        return False, "Invalid address: address cannot be empty.", ""
+    if len(cleaned) > 300:
+        return False, "Invalid address: exceeds maximum length of 300 characters.", ""
+    return True, None, cleaned
+
+
+def _validate_reason(reason: any) -> tuple[bool, str | None, str]:
+    if not isinstance(reason, str):
+        return False, "Invalid reason: must be a string.", ""
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", reason).strip()
+    if not cleaned:
+        return False, "Invalid reason: reason cannot be empty.", ""
+    if len(cleaned) > 500:
+        return False, "Invalid reason: exceeds maximum length of 500 characters.", ""
+    return True, None, cleaned
 
 
 # ── Read tools (no guard needed) ─────────────────────────────────────
@@ -54,19 +98,28 @@ def lookup_order(
 
     Returns order details only if the email matches the customer on file.
     """
-    order = db.lookup_order(conn, order_id, email)
+    valid_id, err_id = _validate_order_id(order_id)
+    if not valid_id:
+        return {"ok": False, "success": False, "error": err_id}
+
+    valid_email, err_email, email_clean = _validate_email(email)
+    if not valid_email:
+        return {"ok": False, "success": False, "error": err_email}
+
+    order = db.lookup_order(conn, order_id, email_clean)
     if order is None:
-        return {"ok": False, "error": "Order not found or email does not match."}
+        return {"ok": False, "success": False, "error": "Order not found or email does not match."}
     customer = db.get_customer(conn, order["customer_id"])
     return {
         "ok": True,
+        "success": True,
         "order_id": order["id"],
         "status": order["status"],
         "total": order["total"],
         "address": order["address"],
         "delivered_at": order["delivered_at"],
         "is_final_sale": bool(order["is_final_sale"]),
-        "customer_name": customer["name"],
+        "customer_name": customer["name"] if customer else "",
     }
 
 
@@ -77,20 +130,43 @@ def check_refund_eligibility(
 
     _today is injectable for deterministic tests; defaults to today.
     """
+    valid_id, err_id = _validate_order_id(order_id)
+    if not valid_id:
+        return {
+            "ok": False,
+            "success": False,
+            "eligible": False,
+            "reason": err_id,
+            "error": err_id,
+        }
+
     order = db.get_order(conn, order_id)
     if order is None:
-        return {"eligible": False, "reason": "Order not found."}
+        return {
+            "ok": False,
+            "success": False,
+            "eligible": False,
+            "reason": "Order not found.",
+            "error": "Order not found.",
+        }
 
     # Rule 2a: must be delivered
     if order["status"] != "delivered":
         return {
+            "ok": True,
+            "success": True,
             "eligible": False,
             "reason": f"Order status is '{order['status']}', not 'delivered'.",
         }
 
     # Rule 3: no final-sale refunds
     if order["is_final_sale"]:
-        return {"eligible": False, "reason": "Final-sale items cannot be refunded."}
+        return {
+            "ok": True,
+            "success": True,
+            "eligible": False,
+            "reason": "Final-sale items cannot be refunded.",
+        }
 
     # Rule 2b: within 30 days of delivery
     today = _get_today(_today)
@@ -98,6 +174,8 @@ def check_refund_eligibility(
     days_since = (today - delivered).days
     if days_since > 30:
         return {
+            "ok": True,
+            "success": True,
             "eligible": False,
             "reason": f"Delivery was {days_since} days ago (limit is 30).",
         }
@@ -105,6 +183,8 @@ def check_refund_eligibility(
     # Rule 5: one refund per order
     if db.get_refunds_for_order(conn, order_id):
         return {
+            "ok": True,
+            "success": True,
             "eligible": False,
             "reason": "A refund has already been issued for this order.",
         }
@@ -112,6 +192,8 @@ def check_refund_eligibility(
     # Rule 4: >5000 must be escalated
     if order["total"] > 5000:
         return {
+            "ok": True,
+            "success": True,
             "eligible": False,
             "reason": (
                 f"Refund amount ₹{order['total']:.0f} exceeds ₹5,000. "
@@ -120,6 +202,8 @@ def check_refund_eligibility(
         }
 
     return {
+        "ok": True,
+        "success": True,
         "eligible": True,
         "reason": "Eligible for refund.",
         "max_amount": order["total"],
@@ -136,10 +220,44 @@ def issue_refund(
     _today: date | None = None,
 ) -> dict:
     """Issue a refund.  The guard re-checks rules 2-5 in code."""
+    valid_id, err_id = _validate_order_id(order_id)
+    if not valid_id:
+        return {"ok": False, "success": False, "error": err_id}
+
+    if (
+        isinstance(amount, bool)
+        or not isinstance(amount, (int, float))
+        or math.isnan(amount)
+        or math.isinf(amount)
+    ):
+        return {
+            "ok": False,
+            "success": False,
+            "error": "Invalid refund amount: must be a finite number.",
+        }
+
+    if amount <= 0:
+        return {
+            "ok": False,
+            "success": False,
+            "error": "Invalid refund amount: must be greater than zero.",
+        }
+
+    # Cap decimals to 2 places
+    amount = round(float(amount), 2)
+
+    order = db.get_order(conn, order_id)
+    if order is None:
+        return _block("2", "Order not found.")
+
+    if amount > order["total"]:
+        return {
+            "ok": False,
+            "success": False,
+            "error": f"Refund amount ₹{amount:.2f} exceeds order total of ₹{order['total']:.2f}.",
+        }
+
     if _guard_enabled():
-        order = db.get_order(conn, order_id)
-        if order is None:
-            return _block("2", "Order not found.")
         if order["status"] != "delivered":
             return _block("2", f"Order status is '{order['status']}', must be 'delivered'.")
 
@@ -159,13 +277,22 @@ def issue_refund(
             return _block("5", "A refund already exists for this order.")
 
     refund = db.create_refund(conn, order_id, amount)
-    return {"ok": True, "refund_id": refund["id"], "amount": refund["amount"]}
+    return {
+        "ok": True,
+        "success": True,
+        "refund_id": refund["id"],
+        "amount": refund["amount"],
+    }
 
 
 def cancel_order(
     conn: sqlite3.Connection, order_id: int
 ) -> dict:
     """Cancel an order.  Guard enforces rule 6: processing only."""
+    valid_id, err_id = _validate_order_id(order_id)
+    if not valid_id:
+        return {"ok": False, "success": False, "error": err_id}
+
     if _guard_enabled():
         order = db.get_order(conn, order_id)
         if order is None:
@@ -175,15 +302,32 @@ def cancel_order(
                 "6",
                 f"Order status is '{order['status']}', must be 'processing' to cancel.",
             )
+    else:
+        order = db.get_order(conn, order_id)
+        if order is None:
+            return {"ok": False, "success": False, "error": "Order not found."}
 
     order = db.cancel_order(conn, order_id)
-    return {"ok": True, "order_id": order["id"], "status": order["status"]}
+    return {
+        "ok": True,
+        "success": True,
+        "order_id": order["id"],
+        "status": order["status"],
+    }
 
 
 def update_address(
     conn: sqlite3.Connection, order_id: int, new_address: str
 ) -> dict:
     """Change shipping address.  Guard enforces rule 7: processing only."""
+    valid_id, err_id = _validate_order_id(order_id)
+    if not valid_id:
+        return {"ok": False, "success": False, "error": err_id}
+
+    valid_addr, err_addr, cleaned_address = _validate_address(new_address)
+    if not valid_addr:
+        return {"ok": False, "success": False, "error": err_addr}
+
     if _guard_enabled():
         order = db.get_order(conn, order_id)
         if order is None:
@@ -193,17 +337,40 @@ def update_address(
                 "7",
                 f"Order status is '{order['status']}', must be 'processing' to change address.",
             )
+    else:
+        order = db.get_order(conn, order_id)
+        if order is None:
+            return {"ok": False, "success": False, "error": "Order not found."}
 
-    order = db.update_order_address(conn, order_id, new_address)
-    return {"ok": True, "order_id": order["id"], "address": order["address"]}
+    order = db.update_order_address(conn, order_id, cleaned_address)
+    return {
+        "ok": True,
+        "success": True,
+        "order_id": order["id"],
+        "address": order["address"],
+    }
 
 
 def escalate_to_human(
     conn: sqlite3.Connection, reason: str, order_id: int | None = None
 ) -> dict:
     """Escalate to a human supervisor.  No guard — escalation is always OK."""
-    esc = db.create_escalation(conn, order_id, reason)
-    return {"ok": True, "escalation_id": esc["id"], "reason": esc["reason"]}
+    if order_id is not None:
+        valid_id, err_id = _validate_order_id(order_id)
+        if not valid_id:
+            return {"ok": False, "success": False, "error": err_id}
+
+    valid_reason, err_reason, cleaned_reason = _validate_reason(reason)
+    if not valid_reason:
+        return {"ok": False, "success": False, "error": err_reason}
+
+    esc = db.create_escalation(conn, order_id, cleaned_reason)
+    return {
+        "ok": True,
+        "success": True,
+        "escalation_id": esc["id"],
+        "reason": esc["reason"],
+    }
 
 
 # ── JSON schemas for the LLM ─────────────────────────────────────────
@@ -367,8 +534,73 @@ def dispatch(conn: sqlite3.Connection, tool_name: str, arguments: dict) -> dict:
     """Route a tool call from the LLM to the right Python function.
 
     The agent loop calls this; it never touches tool functions directly.
+    Catches missing, extra, and wrong-type arguments returning a clean error dict.
     """
+    if not isinstance(arguments, dict):
+        return {
+            "ok": False,
+            "success": False,
+            "error": f"Tool arguments for '{tool_name}' must be a dictionary/object.",
+        }
+
     fn = TOOL_REGISTRY.get(tool_name)
     if fn is None:
-        return {"ok": False, "error": f"Unknown tool: {tool_name}"}
-    return fn(conn, **arguments)
+        return {
+            "ok": False,
+            "success": False,
+            "error": f"Unknown tool: '{tool_name}'",
+        }
+
+    sig = inspect.signature(fn)
+    allowed_params = set(sig.parameters.keys()) - {"conn"}
+    public_params = {p for p in allowed_params if not p.startswith("_")}
+    has_kwargs = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
+
+    if not has_kwargs:
+        extra_args = set(arguments.keys()) - allowed_params
+        if extra_args:
+            return {
+                "ok": False,
+                "success": False,
+                "error": (
+                    f"Unexpected argument(s) for '{tool_name}': "
+                    f"{', '.join(sorted(extra_args))}. Allowed arguments: {', '.join(sorted(public_params))}"
+                ),
+            }
+
+    required_args = [
+        name
+        for name, p in sig.parameters.items()
+        if name != "conn"
+        and not name.startswith("_")
+        and p.default is inspect.Parameter.empty
+        and p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    ]
+    missing_args = [arg for arg in required_args if arg not in arguments]
+    if missing_args:
+        return {
+            "ok": False,
+            "success": False,
+            "error": (
+                f"Missing required argument(s) for '{tool_name}': "
+                f"{', '.join(sorted(missing_args))}"
+            ),
+        }
+
+    try:
+        return fn(conn, **arguments)
+    except TypeError as e:
+        return {
+            "ok": False,
+            "success": False,
+            "error": f"Invalid arguments for '{tool_name}': {e}",
+        }
+    except Exception as e:
+        log.exception("Unexpected exception in tool %s", tool_name)
+        return {
+            "ok": False,
+            "success": False,
+            "error": f"Execution error in '{tool_name}': {e}",
+        }

@@ -274,4 +274,127 @@ class TestDispatch:
     def test_unknown_tool(self, db):
         result = dispatch(db, "nonexistent_tool", {})
         assert result["ok"] is False
+        assert result["success"] is False
         assert "unknown" in result["error"].lower()
+
+    def test_missing_argument(self, db):
+        result = dispatch(db, "update_address", {"order_id": 1001})
+        assert result["ok"] is False
+        assert result["success"] is False
+        assert "missing required argument" in result["error"].lower()
+
+    def test_extra_argument(self, db):
+        result = dispatch(db, "cancel_order", {"order_id": 1001, "unexpected_key": "val"})
+        assert result["ok"] is False
+        assert result["success"] is False
+        assert "unexpected argument" in result["error"].lower()
+
+    def test_non_dict_arguments(self, db):
+        result = dispatch(db, "cancel_order", ["not", "a", "dict"])
+        assert result["ok"] is False
+        assert result["success"] is False
+        assert "must be a dictionary" in result["error"].lower()
+
+
+# ── Step 1 Validation & Boundary Tests ─────────────────────────────────
+
+class TestIssueRefundValidation:
+    def test_reject_non_numeric_amount(self, db):
+        for bad in ["five hundred", None, [], True, False]:
+            res = issue_refund(db, 1003, bad, _today=TODAY)
+            assert res["ok"] is False
+            assert res["success"] is False
+            assert "finite number" in res["error"]
+
+    def test_reject_nan_amount(self, db):
+        res = issue_refund(db, 1003, float("nan"), _today=TODAY)
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert "finite number" in res["error"]
+
+    def test_reject_inf_amount(self, db):
+        for bad in [float("inf"), float("-inf")]:
+            res = issue_refund(db, 1003, bad, _today=TODAY)
+            assert res["ok"] is False
+            assert res["success"] is False
+            assert "finite number" in res["error"]
+
+    def test_reject_negative_and_zero_amount(self, db):
+        for bad in [0, 0.0, -1, -500.50]:
+            res = issue_refund(db, 1003, bad, _today=TODAY)
+            assert res["ok"] is False
+            assert res["success"] is False
+            assert "greater than zero" in res["error"]
+
+    def test_reject_amount_exceeding_order_total(self, db):
+        # Order 1003 total is 1500
+        res = issue_refund(db, 1003, 1500.01, _today=TODAY)
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert "exceeds order total" in res["error"]
+
+    def test_cap_decimals_to_2_places(self, db):
+        res = issue_refund(db, 1003, 123.4567, _today=TODAY)
+        assert res["ok"] is True
+        assert res["success"] is True
+        assert res["amount"] == 123.46
+
+
+class TestToolsTypeAndInputValidation:
+    def test_lookup_order_invalid_types(self, db):
+        for bad_id in ["1001", -1, 0, True, None]:
+            res = lookup_order(db, bad_id, "aarav@example.com")
+            assert res["ok"] is False
+            assert res["success"] is False
+            assert "invalid order_id" in res["error"].lower()
+
+        for bad_email in [123, None, "", "invalid"]:
+            res = lookup_order(db, 1001, bad_email)
+            assert res["ok"] is False
+            assert res["success"] is False
+            assert "invalid email" in res["error"].lower()
+
+    def test_lookup_order_email_spaces_and_case(self, db):
+        res = lookup_order(db, 1001, "   AARAV@EXAMPLE.COM   ")
+        assert res["ok"] is True
+        assert res["success"] is True
+        assert res["order_id"] == 1001
+
+    def test_cancel_order_invalid_id(self, db):
+        res = cancel_order(db, "not_an_int")
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert "invalid order_id" in res["error"].lower()
+
+    def test_update_address_invalid_types_and_length(self, db):
+        res = update_address(db, "1001", "New address")
+        assert res["ok"] is False
+        assert res["success"] is False
+
+        res = update_address(db, 1001, 12345)
+        assert res["ok"] is False
+        assert res["success"] is False
+
+        # Over sane length
+        long_addr = "A" * 350
+        res = update_address(db, 1001, long_addr)
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert "maximum length" in res["error"].lower()
+
+    def test_update_address_strips_control_characters(self, db):
+        # Address with null byte and control character
+        res = update_address(db, 1001, "123 MG\x00 Road\x07, Goa")
+        assert res["ok"] is True
+        assert res["success"] is True
+        assert res["address"] == "123 MG Road, Goa"
+
+    def test_escalate_invalid_inputs(self, db):
+        res = escalate_to_human(db, "", order_id=1001)
+        assert res["ok"] is False
+        assert res["success"] is False
+
+        res = escalate_to_human(db, "Reason", order_id="invalid")
+        assert res["ok"] is False
+        assert res["success"] is False
+

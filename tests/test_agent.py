@@ -215,6 +215,73 @@ class TestAgentLoop:
         # system, user, assistant(tool_call), tool(result), assistant(text)
         assert roles == ["system", "user", "assistant", "tool", "assistant"]
 
+    def test_malformed_json_tool_arguments_handled_cleanly(self, db):
+        """Malformed JSON string in arguments should not crash the loop."""
+        malformed_call = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "bad_call_1",
+                    "type": "function",
+                    "function": {"name": "lookup_order", "arguments": "{bad: json"},
+                }
+            ],
+        }
+        fake = FakeLLM([
+            malformed_call,
+            _text_reply("I encountered a formatting error with the tool arguments."),
+        ])
+
+        messages = [
+            {"role": "system", "content": "test"},
+            {"role": "user", "content": "lookup order"},
+        ]
+        trace = []
+
+        reply = run_turn(db, messages, trace, chat_fn=fake)
+        assert "formatting error" in reply
+        assert len(trace) == 1
+        assert trace[0]["result"]["ok"] is False
+        assert trace[0]["result"]["success"] is False
+        assert "malformed json" in trace[0]["result"]["error"].lower()
+
+        # Verify tool response message was appended with error content
+        tool_msg = messages[-2]
+        assert tool_msg["role"] == "tool"
+        assert "malformed json" in tool_msg["content"].lower()
+
+    def test_unknown_tool_handled_cleanly(self, db):
+        """Unknown tool name requested by model should return error result."""
+        unknown_tool_call = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "unknown_call_1",
+                    "type": "function",
+                    "function": {"name": "hack_system", "arguments": {}},
+                }
+            ],
+        }
+        fake = FakeLLM([
+            unknown_tool_call,
+            _text_reply("That action is unsupported."),
+        ])
+
+        messages = [
+            {"role": "system", "content": "test"},
+            {"role": "user", "content": "hack system"},
+        ]
+        trace = []
+
+        reply = run_turn(db, messages, trace, chat_fn=fake)
+        assert reply == "That action is unsupported."
+        assert len(trace) == 1
+        assert trace[0]["result"]["ok"] is False
+        assert trace[0]["result"]["success"] is False
+        assert "unknown tool" in trace[0]["result"]["error"].lower()
+
 
 # ── System-prompt tests ──────────────────────────────────────────────
 

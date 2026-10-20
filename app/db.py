@@ -183,13 +183,16 @@ def lookup_order(conn: sqlite3.Connection, order_id: int, email: str) -> dict | 
     Returns the order only if the given email matches the customer on the
     order.  This is the FIRST thing the agent must do before any action.
     """
+    if not isinstance(email, str) or not isinstance(order_id, int) or isinstance(order_id, bool):
+        return None
+    email_clean = email.strip().casefold()
     row = conn.execute(
         """
         SELECT o.* FROM orders o
         JOIN customers c ON o.customer_id = c.id
-        WHERE o.id = ? AND LOWER(c.email) = LOWER(?)
+        WHERE o.id = ? AND LOWER(TRIM(c.email)) = ?
         """,
-        (order_id, email),
+        (order_id, email_clean),
     ).fetchone()
     return dict(row) if row else None
 
