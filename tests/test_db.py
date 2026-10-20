@@ -8,6 +8,7 @@ each other.
 import pytest
 from app.db import (
     get_db,
+    get_connection,
     seed,
     get_order,
     get_customer,
@@ -16,6 +17,7 @@ from app.db import (
     create_refund,
     cancel_order,
     update_order_address,
+    update_order_status,
     create_escalation,
 )
 
@@ -232,3 +234,34 @@ class TestCreateEscalation:
         create_escalation(seeded_db, 1006, "Test")
         rows = seeded_db.execute("SELECT * FROM escalations").fetchall()
         assert len(rows) == 1
+
+
+# ── get_connection & update_order_status ──────────────────────────────
+
+class TestGetConnection:
+    def test_get_connection_default_seeded(self):
+        conn = get_connection()
+        try:
+            order = get_order(conn, 1001)
+            assert order is not None
+            assert order["status"] == "processing"
+            assert order["total"] == 2500
+        finally:
+            conn.close()
+
+    def test_get_connection_unseeded(self):
+        conn = get_connection(seed_data=False)
+        try:
+            order = get_order(conn, 1001)
+            assert order is None
+        finally:
+            conn.close()
+
+
+class TestUpdateOrderStatus:
+    def test_update_order_status(self, seeded_db):
+        updated = update_order_status(seeded_db, 1002, "cancelled")
+        assert updated["status"] == "cancelled"
+        fetched = get_order(seeded_db, 1002)
+        assert fetched["status"] == "cancelled"
+

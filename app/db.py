@@ -21,6 +21,14 @@ def get_db(path: str = "store.db") -> sqlite3.Connection:
     return conn
 
 
+def get_connection(path: str = ":memory:", seed_data: bool = True) -> sqlite3.Connection:
+    """Convenience helper returning a connection with schema and seeded data."""
+    conn = get_db(path)
+    if seed_data:
+        seed(conn)
+    return conn
+
+
 # ── Schema ────────────────────────────────────────────────────────────
 
 def create_tables(conn: sqlite3.Connection) -> None:
@@ -238,6 +246,15 @@ def update_order_address(conn: sqlite3.Connection, order_id: int, new_address: s
     """Change the shipping address.  Returns the updated order."""
     conn.execute(
         "UPDATE orders SET address = ? WHERE id = ?", (new_address, order_id)
+    )
+    conn.commit()
+    return get_order(conn, order_id)
+
+
+def update_order_status(conn: sqlite3.Connection, order_id: int, status: str) -> dict | None:
+    """Update order status directly.  Returns the updated order."""
+    conn.execute(
+        "UPDATE orders SET status = ? WHERE id = ?", (status, order_id)
     )
     conn.commit()
     return get_order(conn, order_id)
