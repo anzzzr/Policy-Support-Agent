@@ -44,7 +44,11 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
         raise RuntimeError("Set GROQ_API_KEY (or LLM_API_KEY) environment variable.")
 
     base_url = os.environ.get("LLM_BASE_URL", DEFAULT_BASE_URL)
-    model = os.environ.get("LLM_MODEL", DEFAULT_MODEL)
+    model = os.environ.get("LLM_MODEL")
+
+    # If hitting Groq but model is set to an OpenAI model (like gpt-6-luna or gpt-4o-mini), use Groq's model
+    if not model or ("api.groq.com" in base_url and (model.startswith("gpt-") or model.startswith("o1-") or model.startswith("o3-"))):
+        model = DEFAULT_MODEL
 
     client = openai.OpenAI(api_key=api_key, base_url=base_url)
 
