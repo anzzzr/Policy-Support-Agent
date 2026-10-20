@@ -364,8 +364,33 @@ def format_results_markdown(
 # ── Main runner ───────────────────────────────────────────────────────
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run evaluation scenarios")
+    parser.add_argument(
+        "--variant",
+        choices=["A", "B", "C", "all"],
+        default="all",
+        help="Variant to run (default: all)",
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=3,
+        help="Runs per scenario (default: 3)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limit number of scenarios to evaluate (default: all)",
+    )
+    cli_args = parser.parse_args()
+
     api_key = os.environ.get("LLM_API_KEY")
     scenarios = load_all_scenarios()
+    if cli_args.limit:
+        scenarios = scenarios[:cli_args.limit]
     print(f"Loaded {len(scenarios)} scenarios from {SCENARIOS_DIR}.")
 
     if not api_key:
@@ -402,7 +427,7 @@ def main():
         return
 
     # Variants definition
-    variants = [
+    all_variants = [
         {
             "id": "A",
             "name": "No policy, Guard ON",
@@ -423,46 +448,69 @@ def main():
         },
     ]
 
+    if cli_args.variant != "all":
+        variants = [v for v in all_variants if v["id"] == cli_args.variant]
+    else:
+        variants = all_variants
+
     all_results: list[RunResult] = []
     variant_metrics: dict[str, dict[str, Any]] = {}
     jsonl_entries = []
 
-    for v in variants:
-        print(f"\nEvaluating Variant {v['id']}: {v['name']}...")
-        v_results: list[RunResult] = []
-        for sc in scenarios:
-            for run_i in range(1, 4):
-                res, trace = run_single_scenario(
-                    scenario=sc,
-                    variant_name=v["id"],
-                    include_policy=v["include_policy"],
-                    guard_enabled=v["guard"],
-                    run_num=run_i,
-                )
-                v_results.append(res)
-                all_results.append(res)
-                jsonl_entries.append({
-                    "scenario_id": res.scenario_id,
-                    "variant": res.variant,
-                    "run_num": res.run_num,
-                    "success": res.success,
-                    "db_matches": res.db_matches,
-                    "forbidden_triggered": res.forbidden_triggered,
-                    "blocked_violation_count": res.blocked_violation_count,
-                    "policy_violation": res.policy_violation,
-                    "should_escalate": res.should_escalate,
-                    "did_escalate": res.did_escalate,
-                    "failure_reasons": res.failure_reasons,
-                    "latency_sec": res.latency_sec,
-                    "tokens": res.tokens,
-                })
-        metrics = compute_metrics(v_results)
-        variant_metrics[v["id"]] = metrics
-        print(
-            f"  Variant {v['id']} Success Rate: {metrics['success_rate']:.1f}% | "
-            f"Consistency: {metrics['consistency_rate']:.1f}% | "
-            f"Violations: {metrics['violation_rate']:.1f}%"
-        )
+    try:
+        for v in variants:
+            print(f"\nEvaluating Variant {v['id']}: {v['name']}...")
+            v_results: list[RunResult] = []
+            for sc in scenarios:
+                for run_i in range(1, cli_args.runs + 1):
+                    res, trace = run_single_scenario(
+                        scenario=sc,
+                        variant_name=v["id"],
+                        include_policy=v["include_policy"],
+                        guard_enabled=v["guard"],
+                        run_num=run_i,
+                    )
+                    v_results.append(res)
+                    all_results.append(res)
+                    jsonl_entries.append({
+                        "scenario_id": res.scenario_id,
+                        "variant": res.variant,
+                        "run_num": res.run_num,
+                        "success": res.success,
+                        "db_matches": res.db_matches,
+                        "forbidden_triggered": res.forbidden_triggered,
+                        "blocked_violation_count": res.blocked_violation_count,
+                        "policy_violation": res.policy_violation,
+                        "should_escalate": res.should_escalate,
+                        "did_escalate": res.did_escalate,
+                        "failure_reasons": res.failure_reasons,
+                        "latency_sec": res.latency_sec,
+                        "tokens": res.tokens,
+                    })
+            metrics = compute_metrics(v_results)
+            variant_metrics[v["id"]] = metrics
+            print(
+                f"  Variant {v['id']} Success Rate: {metrics['success_rate']:.1f}% | "
+                f"Consistency: {metrics['consistency_rate']:.1f}% | "
+                f"Violations: {metrics['violation_rate']:.1f}%"
+            )
+    except Exception as e:
+        if "RateLimitError" in type(e).__name__ or "rate limit" in str(e).lower():
+            print(f"\n[!] API Rate limit reached: {e}")
+            print(
+                "\nExplanation: Experimental models like 'gpt-6-luna' often have strict daily limits (e.g. 50 RPD)."
+            )
+            print(
+                "A full evaluation of 30 scenarios x 3 runs x 3 variants requires ~270-500 requests."
+            )
+            print("To resolve:")
+            print("1. Switch to a model with standard rate limits:")
+            print("   export LLM_MODEL='gpt-4o-mini'")
+            print("   make eval")
+            print("\n2. Or test a smaller subset on your current quota:")
+            print("   python3 eval/run_eval.py --variant B --runs 1 --limit 5")
+            return
+        raise
 
     # Determine most frequent failures across runs
     failure_counts: dict[str, list[str]] = {}
