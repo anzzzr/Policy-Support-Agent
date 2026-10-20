@@ -52,6 +52,37 @@ def _block(rule: str, detail: str) -> dict:
     }
 
 
+def _init_session(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _session_verified_orders (order_id INTEGER PRIMARY KEY)"
+    )
+
+
+def mark_order_verified(conn: sqlite3.Connection, order_id: int) -> None:
+    """Mark an order as identity-verified in the current session."""
+    _init_session(conn)
+    conn.execute(
+        "INSERT OR IGNORE INTO _session_verified_orders (order_id) VALUES (?)",
+        (order_id,),
+    )
+
+
+def is_order_verified(conn: sqlite3.Connection, order_id: int) -> bool:
+    """Return True if the order has been verified with matching email in this session."""
+    _init_session(conn)
+    row = conn.execute(
+        "SELECT 1 FROM _session_verified_orders WHERE order_id = ?",
+        (order_id,),
+    ).fetchone()
+    return row is not None
+
+
+def clear_session_verifications(conn: sqlite3.Connection) -> None:
+    """Reset verified orders for the connection session."""
+    _init_session(conn)
+    conn.execute("DELETE FROM _session_verified_orders")
+
+
 def _validate_order_id(order_id: any) -> tuple[bool, str | None]:
     if isinstance(order_id, bool) or not isinstance(order_id, int) or order_id <= 0:
         return False, "Invalid order_id: must be a positive integer."
@@ -109,6 +140,10 @@ def lookup_order(
     order = db.lookup_order(conn, order_id, email_clean)
     if order is None:
         return {"ok": False, "success": False, "error": "Order not found or email does not match."}
+
+    # Rule 1 passed: mark order verified for the duration of this session
+    mark_order_verified(conn, order_id)
+
     customer = db.get_customer(conn, order["customer_id"])
     return {
         "ok": True,
@@ -139,6 +174,16 @@ def check_refund_eligibility(
             "reason": err_id,
             "error": err_id,
         }
+
+    # Rule 1: identity verification required in session
+    if _guard_enabled() and not is_order_verified(conn, order_id):
+        res = _block(
+            "1",
+            f"Order {order_id} has not been verified in this session. Call lookup_order with customer email first.",
+        )
+        res["eligible"] = False
+        res["reason"] = res["error"]
+        return res
 
     order = db.get_order(conn, order_id)
     if order is None:
@@ -258,6 +303,12 @@ def issue_refund(
         }
 
     if _guard_enabled():
+        if not is_order_verified(conn, order_id):
+            return _block(
+                "1",
+                f"Order {order_id} has not been verified in this session. Call lookup_order with customer email first.",
+            )
+
         if order["status"] != "delivered":
             return _block("2", f"Order status is '{order['status']}', must be 'delivered'.")
 
@@ -294,6 +345,12 @@ def cancel_order(
         return {"ok": False, "success": False, "error": err_id}
 
     if _guard_enabled():
+        if not is_order_verified(conn, order_id):
+            return _block(
+                "1",
+                f"Order {order_id} has not been verified in this session. Call lookup_order with customer email first.",
+            )
+
         order = db.get_order(conn, order_id)
         if order is None:
             return _block("6", "Order not found.")
@@ -329,6 +386,12 @@ def update_address(
         return {"ok": False, "success": False, "error": err_addr}
 
     if _guard_enabled():
+        if not is_order_verified(conn, order_id):
+            return _block(
+                "1",
+                f"Order {order_id} has not been verified in this session. Call lookup_order with customer email first.",
+            )
+
         order = db.get_order(conn, order_id)
         if order is None:
             return _block("7", "Order not found.")

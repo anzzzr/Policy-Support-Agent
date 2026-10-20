@@ -38,6 +38,9 @@ The agent reads [policy/policy.md](policy/policy.md) directly in its system prom
 9. **Mandatory Escalation:** Escalate abusive language, legal/fraud threats, or out-of-scope requests (e.g. price matching).
 10. **Data Privacy:** Never leak another customer's data or order details.
 
+> [!NOTE]
+> When `GUARD=off` is set (used exclusively for ablation benchmarks in Variant C), all code-level enforcement gates—including Rule 1 identity verification and rules 2–7 business logic checks—are disabled to isolate and measure prompt-only model compliance.
+
 ---
 
 ## How to Run

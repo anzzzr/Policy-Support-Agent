@@ -17,6 +17,8 @@ from app.tools import (
     update_address,
     escalate_to_human,
     dispatch,
+    mark_order_verified,
+    is_order_verified,
 )
 
 # All seed data was designed around this date.
@@ -61,6 +63,11 @@ class TestLookupOrder:
 # ── check_refund_eligibility ─────────────────────────────────────────
 
 class TestCheckRefundEligibility:
+    @pytest.fixture(autouse=True)
+    def verify_all_orders(self, db):
+        for oid in range(1001, 1030):
+            mark_order_verified(db, oid)
+
     def test_eligible(self, db):
         """Order 1003: delivered 2026-10-05, ₹1500, not final sale, no refund."""
         result = check_refund_eligibility(db, 1003, _today=TODAY)
@@ -111,6 +118,11 @@ class TestCheckRefundEligibility:
 # ── issue_refund (guard ON) ──────────────────────────────────────────
 
 class TestIssueRefundGuard:
+    @pytest.fixture(autouse=True)
+    def verify_all_orders(self, db):
+        for oid in range(1001, 1030):
+            mark_order_verified(db, oid)
+
     def test_success(self, db):
         """Order 1003: all rules pass."""
         result = issue_refund(db, 1003, 1500, _today=TODAY)
@@ -170,6 +182,11 @@ class TestIssueRefundGuardOff:
 # ── cancel_order (guard ON) ──────────────────────────────────────────
 
 class TestCancelOrderGuard:
+    @pytest.fixture(autouse=True)
+    def verify_all_orders(self, db):
+        for oid in range(1001, 1030):
+            mark_order_verified(db, oid)
+
     def test_success(self, db):
         """Order 1001 is processing — cancellation allowed."""
         result = cancel_order(db, 1001)
@@ -213,6 +230,11 @@ class TestCancelOrderGuardOff:
 # ── update_address (guard ON) ────────────────────────────────────────
 
 class TestUpdateAddressGuard:
+    @pytest.fixture(autouse=True)
+    def verify_all_orders(self, db):
+        for oid in range(1001, 1030):
+            mark_order_verified(db, oid)
+
     def test_success(self, db):
         """Order 1001 is processing — address change allowed."""
         result = update_address(db, 1001, "999 New Street, Goa")
@@ -334,6 +356,7 @@ class TestIssueRefundValidation:
         assert "exceeds order total" in res["error"]
 
     def test_cap_decimals_to_2_places(self, db):
+        mark_order_verified(db, 1003)
         res = issue_refund(db, 1003, 123.4567, _today=TODAY)
         assert res["ok"] is True
         assert res["success"] is True
@@ -383,6 +406,7 @@ class TestToolsTypeAndInputValidation:
         assert "maximum length" in res["error"].lower()
 
     def test_update_address_strips_control_characters(self, db):
+        mark_order_verified(db, 1001)
         # Address with null byte and control character
         res = update_address(db, 1001, "123 MG\x00 Road\x07, Goa")
         assert res["ok"] is True
@@ -397,4 +421,66 @@ class TestToolsTypeAndInputValidation:
         res = escalate_to_human(db, "Reason", order_id="invalid")
         assert res["ok"] is False
         assert res["success"] is False
+
+
+# ── Step 2 Identity Enforcement Tests ──────────────────────────────────
+
+class TestIdentityEnforcement:
+    def test_direct_cancel_fails_without_verification(self, db):
+        """Rule 1: Direct cancel_order without lookup must fail when GUARD=on."""
+        res = cancel_order(db, 1001)
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert "rule 1" in res["error"].lower()
+        assert "policy violation" in res["error"].lower()
+
+    def test_direct_issue_refund_fails_without_verification(self, db):
+        """Rule 1: Direct issue_refund without lookup must fail when GUARD=on."""
+        res = issue_refund(db, 1003, 1500, _today=TODAY)
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert "rule 1" in res["error"].lower()
+
+    def test_direct_update_address_fails_without_verification(self, db):
+        """Rule 1: Direct update_address without lookup must fail when GUARD=on."""
+        res = update_address(db, 1001, "New Address")
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert "rule 1" in res["error"].lower()
+
+    def test_direct_check_eligibility_fails_without_verification(self, db):
+        """Rule 1: check_refund_eligibility without lookup must fail when GUARD=on."""
+        res = check_refund_eligibility(db, 1003, _today=TODAY)
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert res["eligible"] is False
+        assert "rule 1" in res["error"].lower()
+
+    def test_failed_lookup_does_not_verify_order(self, db):
+        """Lookup with incorrect email leaves the order unverified."""
+        lookup_res = lookup_order(db, 1001, "wrong@example.com")
+        assert lookup_res["ok"] is False
+
+        cancel_res = cancel_order(db, 1001)
+        assert cancel_res["ok"] is False
+        assert "rule 1" in cancel_res["error"].lower()
+
+    def test_successful_lookup_verifies_order_for_subsequent_actions(self, db):
+        """Lookup with correct email authorizes subsequent actions on that order."""
+        lookup_res = lookup_order(db, 1001, "aarav@example.com")
+        assert lookup_res["ok"] is True
+        assert is_order_verified(db, 1001) is True
+
+        # Now cancellation succeeds
+        cancel_res = cancel_order(db, 1001)
+        assert cancel_res["ok"] is True
+        assert cancel_res["status"] == "cancelled"
+
+    def test_guard_off_disables_identity_enforcement(self, db, monkeypatch):
+        """With GUARD=off, identity verification check is bypassed."""
+        monkeypatch.setenv("GUARD", "off")
+        res = cancel_order(db, 1001)
+        assert res["ok"] is True
+        assert res["status"] == "cancelled"
+
 
