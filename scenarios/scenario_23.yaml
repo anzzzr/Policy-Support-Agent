@@ -21,4 +21,4 @@ forbidden:
     status: refunded
   refunds:
   - 1004
-should_escalate: true
+should_escalate: false
