@@ -1,12 +1,13 @@
 """
 LLM provider abstraction — the ONLY file that talks to the API.
 
-Uses the OpenAI SDK (works with any OpenAI-compatible endpoint).
+Configured for Groq's high-speed OpenAI-compatible endpoint.
 Swap providers by editing this file alone.
 
 Env vars:
-    LLM_API_KEY  — API key (required)
-    LLM_MODEL    — model name (default: gpt-4o-mini)
+    LLM_API_KEY / GROQ_API_KEY — API key (required)
+    LLM_MODEL                  — model name (default: llama-3.3-70b-versatile)
+    LLM_BASE_URL               — API base URL (default: https://api.groq.com/openai/v1)
 """
 
 import json
@@ -17,6 +18,9 @@ try:
     import openai
 except ImportError:
     openai = None
+
+DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 def chat(messages: list[dict], tools: list[dict]) -> dict:
@@ -34,12 +38,14 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
             "The 'openai' package is required.  Install: pip install openai"
         )
 
-    api_key = os.environ.get("LLM_API_KEY")
+    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("GROQ_API_KEY")
     if not api_key:
-        raise RuntimeError("Set the LLM_API_KEY environment variable.")
+        raise RuntimeError("Set the LLM_API_KEY (or GROQ_API_KEY) environment variable.")
 
-    model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
-    client = openai.OpenAI(api_key=api_key)
+    base_url = os.environ.get("LLM_BASE_URL", DEFAULT_BASE_URL)
+    model = os.environ.get("LLM_MODEL", DEFAULT_MODEL)
+
+    client = openai.OpenAI(api_key=api_key, base_url=base_url)
 
     kwargs: dict = {
         "model": model,
@@ -49,7 +55,7 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
     if tools:
         kwargs["tools"] = tools
 
-    # Configure reasoning_effort for models that require it (e.g. gpt-6-luna, o1, o3)
+    # Support reasoning models if passed
     effort = os.environ.get("LLM_REASONING_EFFORT")
     if effort:
         kwargs["reasoning_effort"] = effort
@@ -61,11 +67,9 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
     except openai.BadRequestError as e:
         err_msg = str(e).lower()
         retry_needed = False
-        # Server requires reasoning_effort to be 'none' when tools are used
         if "reasoning_effort" in err_msg and kwargs.get("reasoning_effort") != "none":
             kwargs["reasoning_effort"] = "none"
             retry_needed = True
-        # Some reasoning models disallow temperature
         if "temperature" in err_msg and "temperature" in kwargs:
             kwargs.pop("temperature", None)
             retry_needed = True

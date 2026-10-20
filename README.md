@@ -10,19 +10,23 @@ conversations, not by how the chat sounds.
 ## Stack
 
 - Python 3.11+, SQLite (`sqlite3`), pytest, PyYAML
-- One LLM provider (set `LLM_API_KEY` and `LLM_MODEL` env vars)
+- One LLM provider (configured for Groq via `GROQ_API_KEY` or `LLM_API_KEY`)
+- Default model: `llama-3.3-70b-versatile` (or configure `LLM_MODEL`)
 - No frameworks — the agent loop is hand-written
 
 ## Quick start
 
 ```bash
-# Run unit tests
+# Run unit tests (offline, no API key needed)
 make test
 
-# Interactive chat (requires LLM_API_KEY)
+# Set your Groq API key
+export GROQ_API_KEY="gsk_..."
+
+# Interactive chat
 make chat
 
-# Run evaluation scenarios (requires LLM_API_KEY)
+# Run evaluation scenarios
 make eval
 ```
 

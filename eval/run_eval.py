@@ -395,10 +395,10 @@ def main():
 
     if not api_key:
         print(
-            "\n[!] Notice: LLM_API_KEY is not set.\n"
-            "    To run live evaluation against an LLM provider:\n"
-            "        export LLM_API_KEY='your-api-key'\n"
-            "        export LLM_MODEL='gpt-4o-mini'   # or chosen model\n"
+            "\n[!] Notice: LLM_API_KEY / GROQ_API_KEY is not set.\n"
+            "    To run live evaluation against Groq:\n"
+            "        export GROQ_API_KEY='gsk_...'\n"
+            "        export LLM_MODEL='llama-3.3-70b-versatile'   # default\n"
             "        make eval\n"
         )
         # Write placeholder RESULTS.md
