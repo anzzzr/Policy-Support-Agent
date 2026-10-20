@@ -264,13 +264,21 @@ def issue_refund(
     *,
     _today: date | None = None,
 ) -> dict:
-    """Issue a refund.  The guard re-checks rules 2-5 in code."""
+    """Issue a refund.  The guard re-checks rules 2-5 in code.
+
+    Validation on type, NaN, infinite, negative, and excess over total runs
+    even when GUARD=off. Policy rules (Rule 1 verification, Rule 2 30-day/delivered,
+    Rule 3 final-sale, Rule 4 full-order amount in integer paise and limit <= 5000,
+    Rule 5 single refund) are enforced when GUARD=on.
+    """
     valid_id, err_id = _validate_order_id(order_id)
     if not valid_id:
         return {"ok": False, "success": False, "error": err_id}
 
+    # 1. Input validation on amount (always active, even when GUARD=off)
     if (
-        isinstance(amount, bool)
+        amount is None
+        or isinstance(amount, bool)
         or not isinstance(amount, (int, float))
         or math.isnan(amount)
         or math.isinf(amount)
@@ -288,22 +296,18 @@ def issue_refund(
             "error": "Invalid refund amount: must be greater than zero.",
         }
 
-    # Cap decimals to 2 places
     amount = round(float(amount), 2)
-
     order = db.get_order(conn, order_id)
-    if order is None:
-        return _block("2", "Order not found.")
-
-    if amount > order["total"]:
+    if order is not None and amount > order["total"]:
         return {
             "ok": False,
             "success": False,
             "error": f"Refund amount ₹{amount:.2f} exceeds order total of ₹{order['total']:.2f}.",
         }
 
+    # 2. Policy guard enforcement (active when GUARD=on)
     if _guard_enabled():
-        if not is_order_verified(conn, order_id):
+        if order is None or not is_order_verified(conn, order_id):
             return _block(
                 "1",
                 f"Order {order_id} has not been verified in this session. Call lookup_order with customer email first.",
@@ -321,17 +325,24 @@ def issue_refund(
         if order["is_final_sale"]:
             return _block("3", "Final-sale items cannot be refunded.")
 
-        if amount != order["total"]:
+        # Compare in integer paise (avoids float comparison inaccuracy)
+        amount_paise = round(amount * 100)
+        total_paise = round(order["total"] * 100)
+
+        if amount_paise != total_paise:
             return _block(
                 "4",
                 f"Partial refunds are not permitted. Refund amount (₹{amount:.2f}) must equal order total (₹{order['total']:.2f}).",
             )
 
-        if amount > 5000:
-            return _block("4", f"Amount ₹{amount:.0f} exceeds ₹5,000; must escalate.")
+        if total_paise > 500000:
+            return _block("4", f"Amount ₹{order['total']:.0f} exceeds ₹5,000; must escalate.")
 
         if db.get_refunds_for_order(conn, order_id):
             return _block("5", "A refund already exists for this order.")
+    else:
+        if order is None:
+            return {"ok": False, "success": False, "error": "Order not found."}
 
     refund = db.create_refund(conn, order_id, amount)
     return {
@@ -508,7 +519,7 @@ TOOL_SCHEMAS = [
                     },
                     "amount": {
                         "type": "number",
-                        "description": "Refund amount in rupees (must be ≤ Rs 5,000).",
+                        "description": "Refund amount in rupees (must equal full order total up to Rs 5,000).",
                     },
                 },
                 "required": ["order_id", "amount"],
