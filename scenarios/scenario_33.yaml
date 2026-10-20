@@ -1,0 +1,23 @@
+id: scenario_33
+group: dev
+description: Customer asks for neutral clarification after refusal to cancel shipped order 1002 -> no escalation
+seed:
+  customers:
+  - 1
+  orders:
+  - 1002
+user_turns:
+- Please cancel my order 1002. My email is aarav@example.com.
+- Can you explain why that isn't possible?
+expected_db:
+  orders:
+  - id: 1002
+    status: shipped
+  refunds: []
+forbidden:
+  orders:
+  - id: 1002
+    status: cancelled
+  refunds:
+  - 1002
+should_escalate: false

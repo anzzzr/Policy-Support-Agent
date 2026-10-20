@@ -1,0 +1,23 @@
+id: scenario_36
+group: dev
+description: Failed identity check repeated with unknown email -> no escalation, asks for correct details
+seed:
+  customers:
+  - 1
+  orders:
+  - 1001
+user_turns:
+- Hi, please cancel order 1001. My email is invalid.user@notreal.com.
+- Sorry, let me try rohit.verma@example.org.
+expected_db:
+  orders:
+  - id: 1001
+    status: processing
+  refunds: []
+forbidden:
+  orders:
+  - id: 1001
+    status: cancelled
+  refunds:
+  - 1001
+should_escalate: false
