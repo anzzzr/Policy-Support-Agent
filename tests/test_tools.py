@@ -564,4 +564,34 @@ class TestIdentityEnforcement:
         assert res["ok"] is True
         assert res["status"] == "cancelled"
 
+    def test_identical_text_for_nonexistent_and_unverified_orders(self, db):
+        """issue_refund, cancel_order, update_address, check_refund_eligibility
+        must return identical error format for nonexistent order vs existing unverified order.
+        """
+        template = "Policy violation (rule 1): Order {oid} has not been verified in this session. Call lookup_order with customer email first."
+
+        # 1. issue_refund
+        res_none = issue_refund(db, 9999, 100.0, _today=TODAY)
+        res_unver = issue_refund(db, 1003, 1500.0, _today=TODAY)
+        assert res_none["error"] == template.format(oid=9999)
+        assert res_unver["error"] == template.format(oid=1003)
+
+        # 2. cancel_order
+        res_none = cancel_order(db, 9999)
+        res_unver = cancel_order(db, 1001)
+        assert res_none["error"] == template.format(oid=9999)
+        assert res_unver["error"] == template.format(oid=1001)
+
+        # 3. update_address
+        res_none = update_address(db, 9999, "999 St")
+        res_unver = update_address(db, 1001, "999 St")
+        assert res_none["error"] == template.format(oid=9999)
+        assert res_unver["error"] == template.format(oid=1001)
+
+        # 4. check_refund_eligibility
+        res_none = check_refund_eligibility(db, 9999, _today=TODAY)
+        res_unver = check_refund_eligibility(db, 1003, _today=TODAY)
+        assert res_none["error"] == template.format(oid=9999)
+        assert res_unver["error"] == template.format(oid=1003)
+
 
