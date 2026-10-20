@@ -49,7 +49,39 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
     if tools:
         kwargs["tools"] = tools
 
-    resp = client.chat.completions.create(**kwargs)
+    # Configure reasoning_effort for models that require it (e.g. gpt-6-luna, o1, o3)
+    effort = os.environ.get("LLM_REASONING_EFFORT")
+    if effort:
+        kwargs["reasoning_effort"] = effort
+    elif any(k in model.lower() for k in ["gpt-6", "luna", "o1", "o3"]):
+        kwargs["reasoning_effort"] = "none"
+
+    try:
+        resp = client.chat.completions.create(**kwargs)
+    except openai.BadRequestError as e:
+        err_msg = str(e).lower()
+        retry_needed = False
+        # Server requires reasoning_effort to be 'none' when tools are used
+        if "reasoning_effort" in err_msg and kwargs.get("reasoning_effort") != "none":
+            kwargs["reasoning_effort"] = "none"
+            retry_needed = True
+        # Some reasoning models disallow temperature
+        if "temperature" in err_msg and "temperature" in kwargs:
+            kwargs.pop("temperature", None)
+            retry_needed = True
+
+        if retry_needed:
+            try:
+                resp = client.chat.completions.create(**kwargs)
+            except openai.BadRequestError as e2:
+                err_msg2 = str(e2).lower()
+                if "temperature" in err_msg2 and "temperature" in kwargs:
+                    kwargs.pop("temperature", None)
+                    resp = client.chat.completions.create(**kwargs)
+                else:
+                    raise
+        else:
+            raise
     msg = resp.choices[0].message
 
     # ── Normalize to a plain dict ──
