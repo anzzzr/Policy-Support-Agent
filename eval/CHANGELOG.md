@@ -2,7 +2,7 @@
 
 All modifications to evaluation scenarios and their rationales are recorded here.
 
-## 2026-10-21 — Disambiguation of Rule 8 (Review Threats & Escalation Flow)
+## 2026-10-21 — Disambiguation of Rule 8 (Review Threats & Escalation Flow) [Commit 581bccb]
 - **`scenarios/scenario_23.yaml`**:
   - **Change:** Changed `should_escalate` from `true` to `false`.
   - **Reason:** Under Policy v2 Rule 8, social media review threats require the agent to firmly refuse the exception and offer escalation in text, but do not permit automatic invocation of `escalate_to_human` on the first turn without explicit user confirmation.
