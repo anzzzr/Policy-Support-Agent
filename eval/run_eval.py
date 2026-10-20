@@ -27,6 +27,7 @@ SCENARIOS_DIR = ROOT_DIR / "scenarios"
 EVAL_DIR = ROOT_DIR / "eval"
 RESULTS_MD = EVAL_DIR / "RESULTS.md"
 RESULTS_JSONL = EVAL_DIR / "results.jsonl"
+EVAL_TODAY = os.environ.get("EVAL_TODAY", "2026-10-21")
 
 
 # ── Scoring logic ─────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ class RunResult:
     tool_calls: int
     latency_sec: float
     tokens: int
+    eval_today: str = EVAL_TODAY
     failure_reasons: list[str] = field(default_factory=list)
 
 
@@ -337,7 +339,8 @@ def run_single_scenario(
     """Execute one run of a scenario against an isolated DB."""
     # Configure environment for this run
     os.environ["GUARD"] = "on" if guard_enabled else "off"
-    os.environ["MOCK_DATE"] = "2026-10-21"
+    os.environ["EVAL_TODAY"] = EVAL_TODAY
+    os.environ["MOCK_DATE"] = EVAL_TODAY
 
     conn = get_db(":memory:")
     seed(conn)
@@ -593,6 +596,7 @@ def main():
                         "failure_reasons": res.failure_reasons,
                         "latency_sec": res.latency_sec,
                         "tokens": res.tokens,
+                        "eval_today": res.eval_today,
                         "policy_version": "v2",
                         "policy_sha256": current_policy_sha,
                     }

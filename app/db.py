@@ -6,7 +6,8 @@ dicts (via sqlite3.Row) so the rest of the app never writes raw SQL.
 """
 
 import sqlite3
-from datetime import datetime
+import os
+from datetime import datetime, date, timedelta
 
 
 # ── Connection ────────────────────────────────────────────────────────
@@ -75,8 +76,17 @@ def create_tables(conn: sqlite3.Connection) -> None:
 # Dates are pinned so tests are deterministic.
 # "Recent" = within 30 days of 2026-10-21.  "Old" = outside that window.
 
-def seed(conn: sqlite3.Connection) -> None:
-    """Insert demo data.  Safe to call on an empty DB only."""
+def seed(conn: sqlite3.Connection, ref_date: date | None = None) -> None:
+    """Insert demo data. Safe to call on an empty DB only.
+
+    Delivery dates are computed relative to EVAL_TODAY (or MOCK_DATE / ref_date).
+    """
+    if ref_date is None:
+        ref_str = os.environ.get("EVAL_TODAY") or os.environ.get("MOCK_DATE") or "2026-10-21"
+        ref_date = date.fromisoformat(ref_str)
+
+    def rel(days_ago: int) -> str:
+        return (ref_date - timedelta(days=days_ago)).isoformat()
 
     customers = [
         (1,  "Aarav Sharma",   "aarav@example.com"),
@@ -100,53 +110,53 @@ def seed(conn: sqlite3.Connection) -> None:
     # (id, customer_id, status, total, delivered_at, is_final_sale, address)
     orders = [
         # ── Aarav: processing + shipped ──
-        (1001, 1, "processing", 2500, None,           0, "123 MG Road, Mumbai"),
-        (1002, 1, "shipped",    3000, None,           0, "123 MG Road, Mumbai"),
+        (1001, 1, "processing", 2500, None,     0, "123 MG Road, Mumbai"),
+        (1002, 1, "shipped",    3000, None,     0, "123 MG Road, Mumbai"),
 
         # ── Priya: refundable + too old ──
-        (1003, 2, "delivered",  1500, "2026-10-05",   0, "45 Nehru St, Delhi"),
-        (1004, 2, "delivered",  2000, "2026-08-15",   0, "45 Nehru St, Delhi"),
+        (1003, 2, "delivered",  1500, rel(16),  0, "45 Nehru St, Delhi"),
+        (1004, 2, "delivered",  2000, rel(67),  0, "45 Nehru St, Delhi"),
 
         # ── Rahul: final-sale + high-value escalation + processing ──
-        (1005, 3, "delivered",   800, "2026-10-10",   1, "78 Park Ave, Bangalore"),
-        (1006, 3, "delivered",  7500, "2026-10-08",   0, "78 Park Ave, Bangalore"),
-        (1025, 3, "processing", 1100, None,           0, "78 Park Ave, Bangalore"),
+        (1005, 3, "delivered",   800, rel(11),  1, "78 Park Ave, Bangalore"),
+        (1006, 3, "delivered",  7500, rel(13),  0, "78 Park Ave, Bangalore"),
+        (1025, 3, "processing", 1100, None,     0, "78 Park Ave, Bangalore"),
 
         # ── Sneha: already cancelled + already refunded ──
-        (1007, 4, "cancelled",  1200, None,           0, "12 Lake Rd, Hyderabad"),
-        (1008, 4, "refunded",    900, "2026-09-15",   0, "12 Lake Rd, Hyderabad"),
+        (1007, 4, "cancelled",  1200, None,     0, "12 Lake Rd, Hyderabad"),
+        (1008, 4, "refunded",    900, rel(36),  0, "12 Lake Rd, Hyderabad"),
 
         # ── Vikram: processing + refundable ──
-        (1009, 5, "processing", 4500, None,           0, "90 Ring Rd, Pune"),
-        (1010, 5, "delivered",  3200, "2026-10-01",   0, "90 Ring Rd, Pune"),
+        (1009, 5, "processing", 4500, None,     0, "90 Ring Rd, Pune"),
+        (1010, 5, "delivered",  3200, rel(20),  0, "90 Ring Rd, Pune"),
 
         # ── Ananya: shipped (can't cancel) + just-under-5000 refundable ──
-        (1011, 6, "shipped",    6000, None,           0, "34 Hill View, Chennai"),
-        (1012, 6, "delivered",  4999, "2026-09-25",   0, "34 Hill View, Chennai"),
+        (1011, 6, "shipped",    6000, None,     0, "34 Hill View, Chennai"),
+        (1012, 6, "delivered",  4999, rel(26),  0, "34 Hill View, Chennai"),
 
         # ── Karthik: processing final-sale + needs-escalation (>5000) ──
-        (1013, 7, "processing", 1800, None,           1, "56 Temple St, Kochi"),
-        (1014, 7, "delivered",  5001, "2026-10-12",   0, "56 Temple St, Kochi"),
+        (1013, 7, "processing", 1800, None,     1, "56 Temple St, Kochi"),
+        (1014, 7, "delivered",  5001, rel(9),   0, "56 Temple St, Kochi"),
 
         # ── Deepa: refundable + processing ──
-        (1015, 8, "delivered",  2500, "2026-10-03",   0, "23 Gandhi Nagar, Jaipur"),
-        (1016, 8, "processing", 3300, None,           0, "23 Gandhi Nagar, Jaipur"),
+        (1015, 8, "delivered",  2500, rel(18),  0, "23 Gandhi Nagar, Jaipur"),
+        (1016, 8, "processing", 3300, None,     0, "23 Gandhi Nagar, Jaipur"),
 
         # ── Arjun: too old + shipped ──
-        (1017, 9, "delivered",  4000, "2026-09-10",   0, "67 Station Rd, Lucknow"),
-        (1018, 9, "shipped",    1500, None,           0, "67 Station Rd, Lucknow"),
+        (1017, 9, "delivered",  4000, rel(41),  0, "67 Station Rd, Lucknow"),
+        (1018, 9, "shipped",    1500, None,     0, "67 Station Rd, Lucknow"),
 
         # ── Meera: final-sale delivered + processing ──
-        (1019, 10, "delivered",  950, "2026-10-07",   1, "89 Market Lane, Ahmedabad"),
-        (1020, 10, "processing", 2200, None,          0, "89 Market Lane, Ahmedabad"),
+        (1019, 10, "delivered",  950, rel(14),  1, "89 Market Lane, Ahmedabad"),
+        (1020, 10, "processing", 2200, None,    0, "89 Market Lane, Ahmedabad"),
 
         # ── Rohan: refundable + already-refunded (double refund test) ──
-        (1021, 11, "delivered", 3500, "2026-10-06",   0, "11 College Rd, Nagpur"),
-        (1022, 11, "delivered", 1200, "2026-10-02",   0, "11 College Rd, Nagpur"),
+        (1021, 11, "delivered", 3500, rel(15),  0, "11 College Rd, Nagpur"),
+        (1022, 11, "delivered", 1200, rel(19),  0, "11 College Rd, Nagpur"),
 
         # ── Kavita: processing (high value) + refundable (exactly 5000) ──
-        (1023, 12, "processing", 8000, None,          0, "44 Ashok Marg, Bhopal"),
-        (1024, 12, "delivered",  5000, "2026-10-09",  0, "44 Ashok Marg, Bhopal"),
+        (1023, 12, "processing", 8000, None,    0, "44 Ashok Marg, Bhopal"),
+        (1024, 12, "delivered",  5000, rel(12),  0, "44 Ashok Marg, Bhopal"),
     ]
     conn.executemany(
         "INSERT INTO orders (id, customer_id, status, total, delivered_at, is_final_sale, address) "

@@ -27,7 +27,7 @@ def _get_today(_override: date | None = None) -> date:
     """Return effective date for 30-day policy checks."""
     if _override:
         return _override
-    env_date = os.environ.get("MOCK_DATE")
+    env_date = os.environ.get("EVAL_TODAY") or os.environ.get("MOCK_DATE")
     if env_date:
         return date.fromisoformat(env_date)
     return date.today()
