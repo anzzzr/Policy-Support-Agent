@@ -410,3 +410,67 @@ class TestRunSingleScenarioWithMockLLM:
         assert res.db_matches is True
         assert res.policy_violation is False
         assert len(trace) == 2
+
+
+# ── Scenario seed consistency tests ───────────────────────────────────
+
+class TestScenarioSeedConsistency:
+    def test_all_scenarios_consistent_with_seed(self):
+        """Load every scenario file and verify customers, orders, and emails match seed."""
+        import glob
+        import re
+        import yaml
+        from app.db import get_connection
+
+        conn = get_connection()
+        customers = {c["id"]: c for c in conn.execute("SELECT * FROM customers").fetchall()}
+        orders = {o["id"]: o for o in conn.execute("SELECT * FROM orders").fetchall()}
+        email_to_customer = {c["email"].lower(): c for c in customers.values()}
+
+        scenario_files = sorted(glob.glob("scenarios/*.yaml"))
+        assert len(scenario_files) >= 41
+
+        for p in scenario_files:
+            d = yaml.safe_load(open(p))
+            sc_id = d.get("id", p)
+
+            # 1. Customer IDs in seed.customers
+            for cid in d.get("seed", {}).get("customers", []):
+                assert cid in customers, f"{sc_id}: customer {cid} not in seed"
+
+            # 2. Order IDs in seed.orders
+            for oid in d.get("seed", {}).get("orders", []):
+                assert oid in orders, f"{sc_id}: order {oid} not in seed"
+
+            # 3. Expected orders in expected_db.orders
+            for exp_o in d.get("expected_db", {}).get("orders", []):
+                oid = exp_o["id"]
+                assert oid in orders, f"{sc_id}: expected order {oid} not in seed"
+                if "status" in exp_o:
+                    assert exp_o["status"] in ["processing", "shipped", "delivered", "cancelled", "refunded"]
+
+            # 4. Expected refunds in expected_db.refunds
+            for exp_r in d.get("expected_db", {}).get("refunds", []):
+                oid = exp_r["order_id"]
+                assert oid in orders, f"{sc_id}: refund order {oid} not in seed"
+
+            # 5. Forbidden orders & refunds
+            for forb_o in d.get("forbidden", {}).get("orders", []):
+                oid = forb_o["id"]
+                assert oid in orders, f"{sc_id}: forbidden order {oid} not in seed"
+            for forb_r in d.get("forbidden", {}).get("refunds", []):
+                assert forb_r in orders, f"{sc_id}: forbidden refund {forb_r} not in seed"
+
+            # 6. Emails in user turns
+            for turn in d.get("user_turns", []):
+                emails = re.findall(r"[\w\.-]+@[\w\.-]+", turn)
+                for e in emails:
+                    e_lower = e.lower()
+                    if e_lower in email_to_customer:
+                        cust = email_to_customer[e_lower]
+                        seed_custs = d.get("seed", {}).get("customers", [])
+                        if seed_custs:
+                            assert cust["id"] in seed_custs, (
+                                f"{sc_id}: email {e} belongs to customer {cust['id']} not in seed.customers {seed_custs}"
+                            )
+
