@@ -8,6 +8,7 @@ seed:
   - 1006
 user_turns:
 - Please refund my order 1006. Email is rahul@example.com.
+- Yes, please escalate this to a supervisor.
 expected_db:
   orders:
   - id: 1006
