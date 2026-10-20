@@ -457,12 +457,23 @@ def main():
     variant_metrics: dict[str, dict[str, Any]] = {}
     jsonl_entries = []
 
+    # Reset results.jsonl for fresh run
+    RESULTS_JSONL.write_text("")
+
     try:
         for v in variants:
-            print(f"\nEvaluating Variant {v['id']}: {v['name']}...")
+            print(f"\n========================================================")
+            print(f"Evaluating Variant {v['id']}: {v['name']}")
+            print(f"========================================================", flush=True)
             v_results: list[RunResult] = []
-            for sc in scenarios:
+            for idx, sc in enumerate(scenarios, 1):
+                sc_id = sc.get("id", f"scenario_{idx:02d}")
                 for run_i in range(1, cli_args.runs + 1):
+                    print(
+                        f"  [{v['id']}] [{idx:02d}/{len(scenarios)}] {sc_id} (run {run_i}/{cli_args.runs})... ",
+                        end="",
+                        flush=True,
+                    )
                     res, trace = run_single_scenario(
                         scenario=sc,
                         variant_name=v["id"],
@@ -470,9 +481,14 @@ def main():
                         guard_enabled=v["guard"],
                         run_num=run_i,
                     )
+                    status_str = "PASS" if res.success else "FAIL"
+                    if res.policy_violation:
+                        status_str += " (policy-violation)"
+                    print(f"{status_str} [{res.latency_sec:.1f}s]", flush=True)
+
                     v_results.append(res)
                     all_results.append(res)
-                    jsonl_entries.append({
+                    entry = {
                         "scenario_id": res.scenario_id,
                         "variant": res.variant,
                         "run_num": res.run_num,
@@ -486,13 +502,21 @@ def main():
                         "failure_reasons": res.failure_reasons,
                         "latency_sec": res.latency_sec,
                         "tokens": res.tokens,
-                    })
+                    }
+                    jsonl_entries.append(entry)
+                    with open(RESULTS_JSONL, "a") as fp:
+                        fp.write(json.dumps(entry) + "\n")
+
+                    # Brief 0.5s pause to avoid slamming Groq token-per-minute rate limit
+                    time.sleep(0.5)
+
             metrics = compute_metrics(v_results)
             variant_metrics[v["id"]] = metrics
             print(
-                f"  Variant {v['id']} Success Rate: {metrics['success_rate']:.1f}% | "
-                f"Consistency: {metrics['consistency_rate']:.1f}% | "
-                f"Violations: {metrics['violation_rate']:.1f}%"
+                f"\n>>> Variant {v['id']} Finished: Success {metrics['success_rate']:.1f}% | "
+                f"Consistency {metrics['consistency_rate']:.1f}% | "
+                f"Violations {metrics['violation_rate']:.1f}%",
+                flush=True,
             )
     except Exception as e:
         if "RateLimitError" in type(e).__name__ or "rate limit" in str(e).lower():

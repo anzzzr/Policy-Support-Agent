@@ -69,6 +69,11 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
 
     try:
         resp = client.chat.completions.create(**kwargs)
+    except openai.RateLimitError:
+        print(" [Rate-limit: waiting 15s for Groq TPM bucket...] ", end="", flush=True)
+        import time
+        time.sleep(15)
+        resp = client.chat.completions.create(**kwargs)
     except openai.BadRequestError as e:
         err_msg = str(e).lower()
         retry_needed = False
