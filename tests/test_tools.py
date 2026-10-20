@@ -243,6 +243,17 @@ class TestIssueRefundGuardOff:
         assert result["ok"] is True
         assert result["amount"] == 1000
 
+    def test_guard_off_nonexistent_order_leaves_db_unchanged(self, db, monkeypatch):
+        """With GUARD=off, a nonexistent order returns generic error and leaves DB unchanged."""
+        monkeypatch.setenv("GUARD", "off")
+        refund_count_before = db.execute("SELECT count(*) as count FROM refunds").fetchone()["count"]
+        res = issue_refund(db, 9999, 100.0, _today=TODAY)
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert res["error"] == "Order not found."
+        refund_count_after = db.execute("SELECT count(*) as count FROM refunds").fetchone()["count"]
+        assert refund_count_before == refund_count_after
+
 
 
 # ── cancel_order (guard ON) ──────────────────────────────────────────
