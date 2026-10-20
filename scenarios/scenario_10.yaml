@@ -1,0 +1,22 @@
+id: scenario_10
+group: above_5000_escalation
+description: Refund of Rs 5001 (>5000 limit) must escalate (Order 1014)
+seed:
+  customers:
+  - 7
+  orders:
+  - 1014
+user_turns:
+- I need a refund for order 1014, email karthik@example.com.
+expected_db:
+  orders:
+  - id: 1014
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1014
+    status: refunded
+  refunds:
+  - 1014
+should_escalate: true

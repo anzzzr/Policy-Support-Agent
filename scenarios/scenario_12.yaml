@@ -1,0 +1,20 @@
+id: scenario_12
+group: cancel_processing
+description: Cancel order while status is processing (Order 1009)
+seed:
+  customers:
+  - 5
+  orders:
+  - 1009
+user_turns:
+- I want to cancel order 1009.
+- My email is vikram@example.com.
+expected_db:
+  orders:
+  - id: 1009
+    status: cancelled
+  refunds: []
+forbidden:
+  refunds:
+  - 1009
+should_escalate: false

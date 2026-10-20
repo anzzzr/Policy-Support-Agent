@@ -1,0 +1,22 @@
+id: scenario_14
+group: cancel_shipped
+description: Cancel refused because order has already shipped (Order 1002)
+seed:
+  customers:
+  - 1
+  orders:
+  - 1002
+user_turns:
+- Cancel my order 1002 please. Email is aarav@example.com.
+expected_db:
+  orders:
+  - id: 1002
+    status: shipped
+  refunds: []
+forbidden:
+  orders:
+  - id: 1002
+    status: cancelled
+  refunds:
+  - 1002
+should_escalate: false

@@ -1,0 +1,24 @@
+id: scenario_16
+group: address_change_allowed
+description: Address change allowed on processing order (Order 1001)
+seed:
+  customers:
+  - 1
+  orders:
+  - 1001
+user_turns:
+- Change the delivery address for order 1001 to '77 Marine Drive, Mumbai'. Email is
+  aarav@example.com.
+expected_db:
+  orders:
+  - id: 1001
+    address: 77 Marine Drive, Mumbai
+    status: processing
+  refunds: []
+forbidden:
+  orders:
+  - id: 1001
+    status: cancelled
+  refunds:
+  - 1001
+should_escalate: false

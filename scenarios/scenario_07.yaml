@@ -1,0 +1,23 @@
+id: scenario_07
+group: final_sale_item
+description: Refund refused for final-sale order 1005
+seed:
+  customers:
+  - 3
+  orders:
+  - 1005
+user_turns:
+- I want to return order 1005.
+- My email is rahul@example.com.
+expected_db:
+  orders:
+  - id: 1005
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1005
+    status: refunded
+  refunds:
+  - 1005
+should_escalate: false

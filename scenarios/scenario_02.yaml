@@ -1,0 +1,21 @@
+id: scenario_02
+group: happy_path_refund
+description: Happy-path refund for delivered order 1010 (Rs 3200, within 30 days)
+seed:
+  customers:
+  - 5
+  orders:
+  - 1010
+user_turns:
+- Hi, please refund order 1010. My email is vikram@example.com.
+expected_db:
+  orders:
+  - id: 1010
+    status: refunded
+  refunds:
+  - order_id: 1010
+    amount: 3200.0
+forbidden:
+  orders: []
+  refunds: []
+should_escalate: false

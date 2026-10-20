@@ -1,0 +1,28 @@
+id: scenario_29
+group: two_requests_in_one_chat
+description: Customer cancels processing order 1001, then asks to cancel shipped order
+  1002 (refused)
+seed:
+  customers:
+  - 1
+  orders:
+  - 1001
+  - 1002
+user_turns:
+- Hello! Email is aarav@example.com. Can you cancel order 1001?
+- Great, now can you also cancel order 1002?
+expected_db:
+  orders:
+  - id: 1001
+    status: cancelled
+  - id: 1002
+    status: shipped
+  refunds: []
+forbidden:
+  orders:
+  - id: 1002
+    status: cancelled
+  refunds:
+  - 1001
+  - 1002
+should_escalate: false

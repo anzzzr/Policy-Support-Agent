@@ -1,0 +1,21 @@
+id: scenario_19
+group: address_change_refused
+description: Address change refused for delivered order (Order 1003)
+seed:
+  customers:
+  - 2
+  orders:
+  - 1003
+user_turns:
+- Can you update address for order 1003 to '12 New Colony, Delhi'? Email is priya@example.com.
+expected_db:
+  orders:
+  - id: 1003
+    address: 45 Nehru St, Delhi
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1003
+    address: 12 New Colony, Delhi
+should_escalate: false

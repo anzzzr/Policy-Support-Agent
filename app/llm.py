@@ -55,6 +55,13 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
     # ── Normalize to a plain dict ──
     result: dict = {"role": "assistant", "content": msg.content}
 
+    if hasattr(resp, "usage") and resp.usage:
+        result["_usage"] = {
+            "prompt_tokens": getattr(resp.usage, "prompt_tokens", 0),
+            "completion_tokens": getattr(resp.usage, "completion_tokens", 0),
+            "total_tokens": getattr(resp.usage, "total_tokens", 0),
+        }
+
     if msg.tool_calls:
         result["tool_calls"] = [
             {

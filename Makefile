@@ -9,4 +9,4 @@ chat:
 	$(PYTHON) -m app.agent
 
 eval:
-	$(PYTHON) eval/run_eval.py
+	PYTHONPATH=. $(PYTHON) eval/run_eval.py

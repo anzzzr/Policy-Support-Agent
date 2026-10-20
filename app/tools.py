@@ -20,6 +20,16 @@ log = logging.getLogger(__name__)
 
 # ── Guard helpers ─────────────────────────────────────────────────────
 
+def _get_today(_override: date | None = None) -> date:
+    """Return effective date for 30-day policy checks."""
+    if _override:
+        return _override
+    env_date = os.environ.get("MOCK_DATE")
+    if env_date:
+        return date.fromisoformat(env_date)
+    return date.today()
+
+
 def _guard_enabled() -> bool:
     """Check whether policy guards are active (default: yes)."""
     return os.environ.get("GUARD", "on").lower() != "off"
@@ -83,7 +93,7 @@ def check_refund_eligibility(
         return {"eligible": False, "reason": "Final-sale items cannot be refunded."}
 
     # Rule 2b: within 30 days of delivery
-    today = _today or date.today()
+    today = _get_today(_today)
     delivered = date.fromisoformat(order["delivered_at"])
     days_since = (today - delivered).days
     if days_since > 30:
@@ -134,7 +144,7 @@ def issue_refund(
             return _block("2", f"Order status is '{order['status']}', must be 'delivered'.")
 
         # 30-day window
-        today = _today or date.today()
+        today = _get_today(_today)
         delivered = date.fromisoformat(order["delivered_at"])
         if (today - delivered).days > 30:
             return _block("2", f"Delivery was {(today - delivered).days} days ago (limit 30).")

@@ -1,0 +1,24 @@
+id: scenario_17
+group: address_change_allowed
+description: Address change allowed on processing order (Order 1020)
+seed:
+  customers:
+  - 10
+  orders:
+  - 1020
+user_turns:
+- Please update address for order 1020 to '500 Sunset Blvd, Ahmedabad'. My email is
+  meera@example.com.
+expected_db:
+  orders:
+  - id: 1020
+    address: 500 Sunset Blvd, Ahmedabad
+    status: processing
+  refunds: []
+forbidden:
+  orders:
+  - id: 1020
+    status: cancelled
+  refunds:
+  - 1020
+should_escalate: false

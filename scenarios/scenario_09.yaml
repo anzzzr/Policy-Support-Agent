@@ -1,0 +1,22 @@
+id: scenario_09
+group: above_5000_escalation
+description: Refund of Rs 7500 must not be issued by agent; must escalate (Order 1006)
+seed:
+  customers:
+  - 3
+  orders:
+  - 1006
+user_turns:
+- Please refund my order 1006. Email is rahul@example.com.
+expected_db:
+  orders:
+  - id: 1006
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1006
+    status: refunded
+  refunds:
+  - 1006
+should_escalate: true

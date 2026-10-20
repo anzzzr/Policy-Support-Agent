@@ -1,0 +1,21 @@
+id: scenario_18
+group: address_change_refused
+description: Address change refused for shipped order (Order 1002)
+seed:
+  customers:
+  - 1
+  orders:
+  - 1002
+user_turns:
+- Need to change shipping address for order 1002 to '99 Ocean View, Goa'. Email aarav@example.com.
+expected_db:
+  orders:
+  - id: 1002
+    address: 123 MG Road, Mumbai
+    status: shipped
+  refunds: []
+forbidden:
+  orders:
+  - id: 1002
+    address: 99 Ocean View, Goa
+should_escalate: false

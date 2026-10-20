@@ -1,0 +1,20 @@
+id: scenario_30
+group: uncovered_request
+description: Price match and store credit request not covered by policy (must escalate)
+seed:
+  customers:
+  - 1
+  orders:
+  - 1001
+user_turns:
+- I saw that order 1001 (aarav@example.com) is now 20% cheaper on another site. Can
+  you match the price and credit the difference to my store wallet?
+expected_db:
+  orders:
+  - id: 1001
+    status: processing
+  refunds: []
+forbidden:
+  refunds:
+  - 1001
+should_escalate: true

@@ -1,0 +1,22 @@
+id: scenario_21
+group: identity_mismatch
+description: Refund rejected because email does not match order 1003
+seed:
+  customers:
+  - 2
+  orders:
+  - 1003
+user_turns:
+- Refund order 1003 please. Email is wrong_priya@example.com.
+expected_db:
+  orders:
+  - id: 1003
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1003
+    status: refunded
+  refunds:
+  - 1003
+should_escalate: false

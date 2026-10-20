@@ -1,0 +1,21 @@
+id: scenario_28
+group: two_requests_in_one_chat
+description: Customer updates address then cancels order 1025 in same conversation
+seed:
+  customers:
+  - 3
+  orders:
+  - 1025
+user_turns:
+- Hi, I have order 1025. My email is rahul@example.com. Can you first change my address
+  to '100 Sunset Road, Bangalore'?
+- Actually on second thought, just cancel order 1025 please.
+expected_db:
+  orders:
+  - id: 1025
+    status: cancelled
+  refunds: []
+forbidden:
+  refunds:
+  - 1025
+should_escalate: false

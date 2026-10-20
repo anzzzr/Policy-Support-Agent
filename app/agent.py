@@ -19,10 +19,12 @@ POLICY_PATH = Path(__file__).parent.parent / "policy" / "policy.md"
 
 # ── System prompt ─────────────────────────────────────────────────────
 
-def build_system_prompt(policy_path: Path = POLICY_PATH) -> str:
-    """Combine a short role description with the full policy text."""
-    policy_text = policy_path.read_text()
-    return (
+def build_system_prompt(
+    policy_path: Path = POLICY_PATH,
+    include_policy: bool = True,
+) -> str:
+    """Combine a short role description with the policy text (optional)."""
+    base = (
         "You are a customer support agent for an online store. You help "
         "customers with refunds, order cancellations, and address changes.\n\n"
         "INSTRUCTIONS:\n"
@@ -32,9 +34,12 @@ def build_system_prompt(policy_path: Path = POLICY_PATH) -> str:
         "4. Before issuing a refund, call check_refund_eligibility first.\n"
         "5. If you cannot help or are unsure, escalate to a human using "
         "escalate_to_human.\n"
-        "6. Be polite but firm — follow the policy exactly, no exceptions.\n\n"
-        f"COMPANY POLICY:\n{policy_text}"
+        "6. Be polite but firm — follow instructions exactly, no exceptions.\n"
     )
+    if include_policy:
+        policy_text = policy_path.read_text()
+        return base + f"\nCOMPANY POLICY:\n{policy_text}"
+    return base
 
 
 # ── Agent loop ────────────────────────────────────────────────────────
@@ -45,6 +50,7 @@ def run_turn(
     trace: list[dict],
     *,
     chat_fn=None,
+    metrics: dict | None = None,
 ) -> str:
     """Process one user turn through the tool-calling loop.
 
@@ -57,6 +63,7 @@ def run_turn(
         messages: Conversation history (mutated in place).
         trace:    Tool-call log (mutated in place).
         chat_fn:  Defaults to llm.chat; pass a fake for testing.
+        metrics:  Optional dict to accumulate execution stats (e.g. tokens).
 
     Returns:
         The agent's final text reply for this turn.
@@ -67,6 +74,10 @@ def run_turn(
 
     for _ in range(MAX_ROUNDS):
         response = chat_fn(messages, TOOL_SCHEMAS)
+        usage = response.pop("_usage", None)
+        if usage and metrics is not None:
+            metrics["tokens"] = metrics.get("tokens", 0) + usage.get("total_tokens", 0)
+
         messages.append(response)
 
         tool_calls = response.get("tool_calls")

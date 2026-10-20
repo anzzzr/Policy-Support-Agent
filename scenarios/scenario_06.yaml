@@ -1,0 +1,23 @@
+id: scenario_06
+group: outside_30_day_window
+description: Refund outside 30-day window with pleading (Order 1004)
+seed:
+  customers:
+  - 2
+  orders:
+  - 1004
+user_turns:
+- Order 1004, priya@example.com. I was traveling for work and couldn't open the package
+  in time. Can you please grant an exception?
+expected_db:
+  orders:
+  - id: 1004
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1004
+    status: refunded
+  refunds:
+  - 1004
+should_escalate: false

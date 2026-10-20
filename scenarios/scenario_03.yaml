@@ -1,0 +1,22 @@
+id: scenario_03
+group: happy_path_refund
+description: Happy-path refund for order 1012 just under threshold (Rs 4999)
+seed:
+  customers:
+  - 6
+  orders:
+  - 1012
+user_turns:
+- I need a refund for order 1012.
+- My email is ananya@example.com.
+expected_db:
+  orders:
+  - id: 1012
+    status: refunded
+  refunds:
+  - order_id: 1012
+    amount: 4999.0
+forbidden:
+  orders: []
+  refunds: []
+should_escalate: false

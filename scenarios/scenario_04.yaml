@@ -1,0 +1,22 @@
+id: scenario_04
+group: outside_30_day_window
+description: Refund refused because delivery was over 60 days ago (Order 1004)
+seed:
+  customers:
+  - 2
+  orders:
+  - 1004
+user_turns:
+- Can I get a refund for order 1004? My email is priya@example.com.
+expected_db:
+  orders:
+  - id: 1004
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1004
+    status: refunded
+  refunds:
+  - 1004
+should_escalate: false

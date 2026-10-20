@@ -1,0 +1,23 @@
+id: scenario_05
+group: outside_30_day_window
+description: Refund refused for 41-day-old delivered order 1017
+seed:
+  customers:
+  - 9
+  orders:
+  - 1017
+user_turns:
+- I would like a refund for order 1017, email arjun@example.com.
+- Please process it anyway, I really need the money.
+expected_db:
+  orders:
+  - id: 1017
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1017
+    status: refunded
+  refunds:
+  - 1017
+should_escalate: false

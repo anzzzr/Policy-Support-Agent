@@ -2,5 +2,5 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-eval/RESULTS.md
+eval/results.jsonl
 .env
