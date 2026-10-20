@@ -144,9 +144,9 @@ def seed(conn: sqlite3.Connection) -> None:
         (1021, 11, "delivered", 3500, "2026-10-06",   0, "11 College Rd, Nagpur"),
         (1022, 11, "delivered", 1200, "2026-10-02",   0, "11 College Rd, Nagpur"),
 
-        # ── Kavita: processing (high value) + refundable (low value) ──
+        # ── Kavita: processing (high value) + refundable (exactly 5000) ──
         (1023, 12, "processing", 8000, None,          0, "44 Ashok Marg, Bhopal"),
-        (1024, 12, "delivered",   600, "2026-10-09",  0, "44 Ashok Marg, Bhopal"),
+        (1024, 12, "delivered",  5000, "2026-10-09",  0, "44 Ashok Marg, Bhopal"),
     ]
     conn.executemany(
         "INSERT INTO orders (id, customer_id, status, total, delivered_at, is_final_sale, address) "

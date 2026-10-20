@@ -139,7 +139,7 @@ def lookup_order(
 
     order = db.lookup_order(conn, order_id, email_clean)
     if order is None:
-        return {"ok": False, "success": False, "error": "Order not found or email does not match."}
+        return {"ok": False, "success": False, "error": "Order details do not match our records."}
 
     # Rule 1 passed: mark order verified for the duration of this session
     mark_order_verified(conn, order_id)
@@ -320,6 +320,12 @@ def issue_refund(
 
         if order["is_final_sale"]:
             return _block("3", "Final-sale items cannot be refunded.")
+
+        if amount != order["total"]:
+            return _block(
+                "4",
+                f"Partial refunds are not permitted. Refund amount (₹{amount:.2f}) must equal order total (₹{order['total']:.2f}).",
+            )
 
         if amount > 5000:
             return _block("4", f"Amount ₹{amount:.0f} exceeds ₹5,000; must escalate.")

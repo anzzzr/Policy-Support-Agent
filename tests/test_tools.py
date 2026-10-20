@@ -49,11 +49,19 @@ class TestLookupOrder:
     def test_wrong_email(self, db):
         result = lookup_order(db, 1001, "wrong@example.com")
         assert result["ok"] is False
-        assert "not found" in result["error"].lower() or "mismatch" in result["error"].lower()
+        assert "match" in result["error"].lower()
 
     def test_nonexistent_order(self, db):
         result = lookup_order(db, 9999, "aarav@example.com")
         assert result["ok"] is False
+        assert "match" in result["error"].lower()
+
+    def test_identical_error_for_nonexistent_order_and_wrong_email(self, db):
+        res_wrong = lookup_order(db, 1001, "wrong@example.com")
+        res_none = lookup_order(db, 9999, "aarav@example.com")
+        assert res_wrong["ok"] is False
+        assert res_none["ok"] is False
+        assert res_wrong["error"] == res_none["error"] == "Order details do not match our records."
 
     def test_case_insensitive_email(self, db):
         result = lookup_order(db, 1001, "AARAV@EXAMPLE.COM")
@@ -114,6 +122,27 @@ class TestCheckRefundEligibility:
         assert result["eligible"] is True
         assert result["max_amount"] == 4999
 
+    def test_exact_5000_is_eligible(self, db):
+        """Order 1024: ₹5000 — exactly at the agent refund threshold."""
+        result = check_refund_eligibility(db, 1024, _today=TODAY)
+        assert result["eligible"] is True
+        assert result["max_amount"] == 5000
+
+    def test_day_30_is_eligible(self, db):
+        """Delivery exactly 30 days ago is eligible."""
+        db.execute("UPDATE orders SET delivered_at = '2026-09-21' WHERE id = 1003")
+        db.commit()
+        result = check_refund_eligibility(db, 1003, _today=TODAY)
+        assert result["eligible"] is True
+
+    def test_day_31_is_ineligible(self, db):
+        """Delivery 31 days ago is outside the 30-day window."""
+        db.execute("UPDATE orders SET delivered_at = '2026-09-20' WHERE id = 1003")
+        db.commit()
+        result = check_refund_eligibility(db, 1003, _today=TODAY)
+        assert result["eligible"] is False
+        assert "limit is 30" in result["reason"]
+
 
 # ── issue_refund (guard ON) ──────────────────────────────────────────
 
@@ -146,6 +175,35 @@ class TestIssueRefundGuard:
         assert result["ok"] is False
         assert "rule 2" in result["error"].lower()
 
+    def test_day_30_is_eligible(self, db):
+        """Rule 2: delivery exactly 30 days ago is eligible."""
+        db.execute("UPDATE orders SET delivered_at = '2026-09-21' WHERE id = 1003")
+        db.commit()
+        result = issue_refund(db, 1003, 1500, _today=TODAY)
+        assert result["ok"] is True
+        assert result["amount"] == 1500
+
+    def test_day_31_is_blocked(self, db):
+        """Rule 2: delivery 31 days ago is blocked."""
+        db.execute("UPDATE orders SET delivered_at = '2026-09-20' WHERE id = 1003")
+        db.commit()
+        result = issue_refund(db, 1003, 1500, _today=TODAY)
+        assert result["ok"] is False
+        assert "rule 2" in result["error"].lower()
+
+    def test_partial_refund_blocked_by_guard(self, db):
+        """Rule 4: partial refund is blocked by guard."""
+        result = issue_refund(db, 1003, 1000, _today=TODAY)
+        assert result["ok"] is False
+        assert "rule 4" in result["error"].lower()
+        assert "partial refund" in result["error"].lower()
+
+    def test_exact_5000_refund_succeeds(self, db):
+        """Rule 4: refund of exactly ₹5,000 succeeds."""
+        result = issue_refund(db, 1024, 5000, _today=TODAY)
+        assert result["ok"] is True
+        assert result["amount"] == 5000
+
     def test_blocks_final_sale(self, db):
         """Rule 3: order 1005 is final sale."""
         result = issue_refund(db, 1005, 800, _today=TODAY)
@@ -177,6 +235,13 @@ class TestIssueRefundGuardOff:
         result = issue_refund(db, 1005, 800, _today=TODAY)
         assert result["ok"] is True
         assert get_order(db, 1005)["status"] == "refunded"
+
+    def test_guard_off_allows_partial_refund(self, db, monkeypatch):
+        """With GUARD=off, a partial refund is allowed."""
+        monkeypatch.setenv("GUARD", "off")
+        result = issue_refund(db, 1003, 1000, _today=TODAY)
+        assert result["ok"] is True
+        assert result["amount"] == 1000
 
 
 # ── cancel_order (guard ON) ──────────────────────────────────────────
@@ -284,6 +349,20 @@ class TestEscalateToHuman:
         assert result["ok"] is True
         assert result["reason"] == "Abusive language"
 
+    def test_explicit_null_order_id(self, db):
+        """Rule 9: escalations accept explicit null order_id."""
+        result = escalate_to_human(db, "Fraud reported on account", order_id=None)
+        assert result["ok"] is True
+        assert result["reason"] == "Fraud reported on account"
+        row = db.execute("SELECT * FROM escalations WHERE id = ?", (result["escalation_id"],)).fetchone()
+        assert row["order_id"] is None
+
+    def test_dispatch_explicit_null_order_id(self, db):
+        """dispatch routes escalate_to_human with order_id=None."""
+        result = dispatch(db, "escalate_to_human", {"reason": "Fraud reported on account", "order_id": None})
+        assert result["ok"] is True
+        assert result["reason"] == "Fraud reported on account"
+
 
 # ── dispatch ──────────────────────────────────────────────────────────
 
@@ -357,6 +436,8 @@ class TestIssueRefundValidation:
 
     def test_cap_decimals_to_2_places(self, db):
         mark_order_verified(db, 1003)
+        db.execute("UPDATE orders SET total = 123.46 WHERE id = 1003")
+        db.commit()
         res = issue_refund(db, 1003, 123.4567, _today=TODAY)
         assert res["ok"] is True
         assert res["success"] is True
