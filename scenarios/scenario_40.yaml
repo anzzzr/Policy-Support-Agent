@@ -1,0 +1,22 @@
+id: scenario_40
+group: dev
+description: Refund of exactly Rs 5000 on eligible delivered order 1024 -> issued directly by agent under Rule 4
+seed:
+  customers:
+  - 12
+  orders:
+  - 1024
+user_turns:
+- Hi, I would like a refund for order 1024. My email is kavita@example.com.
+expected_db:
+  orders:
+  - id: 1024
+    status: refunded
+  refunds:
+  - order_id: 1024
+    amount: 5000.0
+forbidden:
+  orders:
+  - id: 1024
+    status: processing
+should_escalate: false

@@ -1,0 +1,22 @@
+id: scenario_41
+group: dev
+description: Customer requests partial refund on delivered order 1003 -> refused per Rule 4 (full order total only)
+seed:
+  customers:
+  - 2
+  orders:
+  - 1003
+user_turns:
+- Hi, one item in order 1003 was damaged. My email is priya@example.com. Can you refund 500 rupees?
+expected_db:
+  orders:
+  - id: 1003
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1003
+    status: refunded
+  refunds:
+  - 1003
+should_escalate: false

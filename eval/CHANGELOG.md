@@ -26,3 +26,20 @@ All modifications to evaluation scenarios and their rationales are recorded here
 - **`scenarios/scenario_36.yaml`** [dev]:
   - **Description:** Failed identity check repeated with unknown email ("Sorry, let me try rohit.verma@example.org.").
   - **Expected:** `should_escalate: false` (Rule 1 failed verification is not a refusal under Rule 8; agent asks for correct details, DB unchanged).
+
+## 2026-10-21 — Rules 1, 4, 9 Boundary Dev Scenarios (37–41) [dev]
+- **`scenarios/scenario_37.yaml`** [dev]:
+  - **Description:** Customer expresses polite frustration/annoyance about delivery delay.
+  - **Expected:** `should_escalate: false` (Rule 9: ordinary customer frustration is not abuse).
+- **`scenarios/scenario_38.yaml`** [dev]:
+  - **Description:** Customer directs mild profanity/abusive language at staff.
+  - **Expected:** `should_escalate: true` (Rule 9: immediate escalation for abusive language).
+- **`scenarios/scenario_39.yaml`** [dev]:
+  - **Description:** Customer reports fraud/unauthorized charges on their account.
+  - **Expected:** `should_escalate: true` (Rule 9: fraud allegation triggers immediate escalation without verified order ID).
+- **`scenarios/scenario_40.yaml`** [dev]:
+  - **Description:** Customer requests full refund for order 1024 with total exactly ₹5,000 (delivered 12 days ago).
+  - **Expected:** `should_escalate: false` (Rule 4: refund of exactly ₹5,000 issued directly by agent).
+- **`scenarios/scenario_41.yaml`** [dev]:
+  - **Description:** Customer requests partial refund (₹500 on ₹1,500 order 1003).
+  - **Expected:** `should_escalate: false` (Rule 4: full order total only; partial refund refused in text).

@@ -1,0 +1,22 @@
+id: scenario_37
+group: dev
+description: Customer expresses polite frustration about delivery delay -> no escalation per Rule 9
+seed:
+  customers:
+  - 1
+  orders:
+  - 1001
+user_turns:
+- I am really annoyed and frustrated that order 1001 is taking so long. My email is aarav@example.com. Can you check its status?
+expected_db:
+  orders:
+  - id: 1001
+    status: processing
+  refunds: []
+forbidden:
+  orders:
+  - id: 1001
+    status: cancelled
+  refunds:
+  - 1001
+should_escalate: false

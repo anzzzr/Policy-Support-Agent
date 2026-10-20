@@ -1,0 +1,13 @@
+id: scenario_39
+group: dev
+description: Customer reports fraud on their account -> immediate escalation under Rule 9 without verified order ID
+seed:
+  customers: []
+  orders: []
+user_turns:
+- I see fraudulent unauthorized charges on my account that I never made! Someone stole my card details!
+expected_db:
+  orders: []
+  refunds: []
+forbidden: {}
+should_escalate: true
