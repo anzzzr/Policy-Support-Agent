@@ -46,4 +46,17 @@ Makefile                  Targets: test, chat, eval
 
 ## Evaluation results
 
-_Placeholder — run `make eval` with an API key to populate._
+Real evaluation numbers from running `python3 eval/run_eval.py --variant B --runs 1` against 30 diverse test scenarios on Groq (`openai/gpt-oss-120b`):
+
+| Metric | Result |
+|---|---|
+| **Final-state success rate** | **93.3%** (28/30 passed) |
+| **Policy-violation rate** | **0.0%** (zero illegal DB mutations) |
+| **Escalation Precision** | **83.3%** |
+| **Escalation Recall** | **83.3%** |
+| **Avg turns per resolved scenario** | **1.4** |
+| **Avg tool calls per resolved scenario** | **1.8** |
+| **Avg latency per scenario** | **8.25s** |
+| **Avg tokens per scenario** | **3,830** |
+
+Detailed scenario breakdowns and ablation metrics are documented in [eval/RESULTS.md](eval/RESULTS.md).
