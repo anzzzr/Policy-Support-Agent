@@ -244,6 +244,7 @@ class TestIssueRefundGuardOff:
         assert result["amount"] == 1000
 
 
+
 # ── cancel_order (guard ON) ──────────────────────────────────────────
 
 class TestCancelOrderGuard:
@@ -428,6 +429,7 @@ class TestIssueRefundValidation:
             assert "greater than zero" in res["error"]
 
     def test_reject_amount_exceeding_order_total(self, db):
+        mark_order_verified(db, 1003)
         # Order 1003 total is 1500
         res = issue_refund(db, 1003, 1500.01, _today=TODAY)
         assert res["ok"] is False
@@ -593,5 +595,18 @@ class TestIdentityEnforcement:
         res_unver = check_refund_eligibility(db, 1003, _today=TODAY)
         assert res_none["error"] == template.format(oid=9999)
         assert res_unver["error"] == template.format(oid=1003)
+
+    def test_huge_amount_refund_identical_text_for_nonexistent_and_unverified(self, db):
+        """A huge refund amount must not disclose order existence.
+        Both nonexistent order and unverified order must return identical rule 1 error.
+        """
+        template = "Policy violation (rule 1): Order {oid} has not been verified in this session. Call lookup_order with customer email first."
+        huge_amount = 999_999_999.0
+        res_none = issue_refund(db, 9999, huge_amount, _today=TODAY)
+        res_unver = issue_refund(db, 1003, huge_amount, _today=TODAY)
+        assert res_none["ok"] is False and res_unver["ok"] is False
+        assert res_none["error"] == template.format(oid=9999)
+        assert res_unver["error"] == template.format(oid=1003)
+
 
 

@@ -298,20 +298,22 @@ def issue_refund(
 
     amount = round(float(amount), 2)
     order = db.get_order(conn, order_id)
-    if order is not None and amount > order["total"]:
-        return {
-            "ok": False,
-            "success": False,
-            "error": f"Refund amount ₹{amount:.2f} exceeds order total of ₹{order['total']:.2f}.",
-        }
 
     # 2. Policy guard enforcement (active when GUARD=on)
     if _guard_enabled():
+        # Existence and verification check runs FIRST: identical error for nonexistent and unverified
         if order is None or not is_order_verified(conn, order_id):
             return _block(
                 "1",
                 f"Order {order_id} has not been verified in this session. Call lookup_order with customer email first.",
             )
+
+        if amount > order["total"]:
+            return {
+                "ok": False,
+                "success": False,
+                "error": "Refund amount exceeds order total.",
+            }
 
         if order["status"] != "delivered":
             return _block("2", f"Order status is '{order['status']}', must be 'delivered'.")
@@ -332,17 +334,23 @@ def issue_refund(
         if amount_paise != total_paise:
             return _block(
                 "4",
-                f"Partial refunds are not permitted. Refund amount (₹{amount:.2f}) must equal order total (₹{order['total']:.2f}).",
+                "Partial refunds are not permitted. Refund amount must equal order total.",
             )
 
         if total_paise > 500000:
-            return _block("4", f"Amount ₹{order['total']:.0f} exceeds ₹5,000; must escalate.")
+            return _block("4", "Amount exceeds ₹5,000; must escalate.")
 
         if db.get_refunds_for_order(conn, order_id):
             return _block("5", "A refund already exists for this order.")
     else:
         if order is None:
             return {"ok": False, "success": False, "error": "Order not found."}
+        if amount > order["total"]:
+            return {
+                "ok": False,
+                "success": False,
+                "error": "Refund amount exceeds order total.",
+            }
 
     refund = db.create_refund(conn, order_id, amount)
     return {
