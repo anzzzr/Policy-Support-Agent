@@ -7,7 +7,13 @@ numbers are meaningless.
 
 import pytest
 
-from app.db import get_db, seed, create_refund, cancel_order, create_escalation
+from app.db import (
+    get_db,
+    seed,
+    create_refund,
+    cancel_order,
+    create_escalation,
+)
 from eval.run_eval import (
     evaluate_run,
     compute_metrics,
@@ -168,6 +174,112 @@ class TestEvaluateRun:
         assert result.did_escalate is True
         assert result.escalation_match is False
         assert any("escalated unnecessarily" in r for r in result.failure_reasons)
+
+    def test_unlisted_order_mutation_fails(self, db):
+        """Mutating an order not listed in expected_db must fail the run."""
+        create_refund(db, 1003, 1500)
+        # Unlisted order mutation
+        cancel_order(db, 1002)
+        scenario = {
+            "id": "scenario_01",
+            "expected_db": {
+                "orders": [{"id": 1003, "status": "refunded"}],
+                "refunds": [{"order_id": 1003, "amount": 1500.0}],
+            },
+            "forbidden": {},
+            "should_escalate": False,
+        }
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1)
+        assert result.success is False
+        assert result.db_matches is False
+        assert any("unexpected mutation on unlisted order 1002" in r.lower() for r in result.failure_reasons)
+
+    def test_extra_refund_row_fails(self, db):
+        """Creating an extra refund row not in expected_db must fail the run."""
+        create_refund(db, 1003, 1500)
+        # Extra unlisted refund
+        create_refund(db, 1001, 500)
+        scenario = {
+            "id": "scenario_01",
+            "expected_db": {
+                "orders": [{"id": 1003, "status": "refunded"}],
+                "refunds": [{"order_id": 1003, "amount": 1500.0}],
+            },
+            "forbidden": {},
+            "should_escalate": False,
+        }
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1)
+        assert result.success is False
+        assert result.db_matches is False
+        assert any("extra refund row created" in r.lower() for r in result.failure_reasons)
+
+    def test_extra_escalation_fails(self, db):
+        """When should_escalate is False, an extra escalation row must fail the run."""
+        create_escalation(db, 1001, "Unexpected supervisor escalation")
+        scenario = {
+            "id": "scenario_02",
+            "expected_db": {
+                "orders": [{"id": 1001, "status": "processing"}],
+            },
+            "forbidden": {},
+            "should_escalate": False,
+        }
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1)
+        assert result.success is False
+        assert result.escalation_match is False
+        assert any("escalated unnecessarily" in r.lower() for r in result.failure_reasons)
+
+    def test_exact_match_passes(self, db):
+        """Exact database changes match expected_db and nothing extra changed."""
+        create_refund(db, 1003, 1500)
+        scenario = {
+            "id": "scenario_01",
+            "expected_db": {
+                "orders": [{"id": 1003, "status": "refunded"}],
+                "refunds": [{"order_id": 1003, "amount": 1500.0}],
+            },
+            "forbidden": {},
+            "should_escalate": False,
+        }
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1)
+        assert result.success is True
+        assert result.db_matches is True
+        assert result.failure_reasons == []
+
+    def test_scorer_fails_loudly_on_nonexistent_row(self, db):
+        """Scorer raises ValueError if scenario references nonexistent customer or order."""
+        # Nonexistent order in expected_db.orders
+        bad_scenario_1 = {
+            "id": "bad_scenario_1",
+            "expected_db": {"orders": [{"id": 9999, "status": "delivered"}]},
+        }
+        with pytest.raises(ValueError, match="references nonexistent order 9999 in expected_db.orders"):
+            evaluate_run(db, bad_scenario_1, trace=[])
+
+        # Nonexistent order in expected_db.refunds
+        bad_scenario_2 = {
+            "id": "bad_scenario_2",
+            "expected_db": {"refunds": [{"order_id": 9999, "amount": 500.0}]},
+        }
+        with pytest.raises(ValueError, match="references nonexistent order 9999 in expected_db.refunds"):
+            evaluate_run(db, bad_scenario_2, trace=[])
+
+        # Nonexistent customer in seed.customers
+        bad_scenario_3 = {
+            "id": "bad_scenario_3",
+            "seed": {"customers": [8888]},
+        }
+        with pytest.raises(ValueError, match="references nonexistent customer 8888 in seed.customers"):
+            evaluate_run(db, bad_scenario_3, trace=[])
+
+        # Nonexistent order in forbidden.orders
+        bad_scenario_4 = {
+            "id": "bad_scenario_4",
+            "forbidden": {"orders": [{"id": 9999, "status": "cancelled"}]},
+        }
+        with pytest.raises(ValueError, match="references nonexistent order 9999 in forbidden.orders"):
+            evaluate_run(db, bad_scenario_4, trace=[])
+
 
 
 # ── Aggregate metrics tests ───────────────────────────────────────────

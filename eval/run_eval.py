@@ -6,6 +6,7 @@ Quality is measured by the FINAL DATABASE STATE, not how the chat sounds.
 
 import json
 import os
+import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
@@ -49,99 +50,183 @@ class RunResult:
     failure_reasons: list[str] = field(default_factory=list)
 
 
+def snapshot_db(conn: sqlite3.Connection) -> dict[str, list[dict]]:
+    """Snapshot all 4 tables in the database (customers, orders, refunds, escalations)."""
+    snapshot = {}
+    for table in ["customers", "orders", "refunds", "escalations"]:
+        rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+        snapshot[table] = [dict(r) for r in rows]
+    return snapshot
+
+
 def evaluate_run(
-    conn,
+    conn: sqlite3.Connection,
     scenario: dict,
     trace: list[dict],
-    variant: str,
-    run_num: int,
+    variant: str = "B",
+    run_num: int = 1,
     latency_sec: float = 0.0,
     tokens: int = 0,
+    initial_snapshot: dict[str, list[dict]] | None = None,
 ) -> RunResult:
-    """Compare final database state against expected_db and forbidden rules."""
-    failure_reasons = []
-    expected_db = scenario.get("expected_db", {})
-    forbidden = scenario.get("forbidden", {})
-    should_escalate = scenario.get("should_escalate", False)
+    """Compare final database state against expected_db and forbidden rules.
 
-    # 1. Check expected order states
-    db_matches = True
+    Enforces full database state comparison before and after each run.
+    Any extra row change (unlisted order mutation, extra refund, extra escalation)
+    fails the run. Fails loudly with ValueError if the scenario references
+    nonexistent rows.
+    """
+    if initial_snapshot is None:
+        _seed_conn = get_db(":memory:")
+        seed(_seed_conn)
+        initial_snapshot = snapshot_db(_seed_conn)
+        _seed_conn.close()
+
+    final_snapshot = snapshot_db(conn)
+
+    # 1. Nonexistent row reference validation (fail loudly)
+    all_customer_ids = {c["id"] for c in initial_snapshot.get("customers", [])}
+    all_order_ids = {o["id"] for o in initial_snapshot.get("orders", [])}
+    scenario_id = scenario.get("id", "unknown")
+
+    for cid in scenario.get("seed", {}).get("customers", []):
+        if cid not in all_customer_ids:
+            raise ValueError(f"Scenario '{scenario_id}' references nonexistent customer {cid} in seed.customers")
+    for oid in scenario.get("seed", {}).get("orders", []):
+        if oid not in all_order_ids:
+            raise ValueError(f"Scenario '{scenario_id}' references nonexistent order {oid} in seed.orders")
+
+    expected_db = scenario.get("expected_db", {})
     for exp_order in expected_db.get("orders", []):
-        order_id = exp_order["id"]
-        row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-        if not row:
+        oid = exp_order.get("id")
+        if oid not in all_order_ids:
+            raise ValueError(f"Scenario '{scenario_id}' references nonexistent order {oid} in expected_db.orders")
+    for exp_refund in expected_db.get("refunds", []):
+        oid = exp_refund.get("order_id")
+        if oid not in all_order_ids:
+            raise ValueError(f"Scenario '{scenario_id}' references nonexistent order {oid} in expected_db.refunds")
+
+    forbidden = scenario.get("forbidden", {})
+    for forb_order in forbidden.get("orders", []):
+        oid = forb_order.get("id")
+        if oid not in all_order_ids:
+            raise ValueError(f"Scenario '{scenario_id}' references nonexistent order {oid} in forbidden.orders")
+    for forb_ref_id in forbidden.get("refunds", []):
+        if forb_ref_id not in all_order_ids:
+            raise ValueError(f"Scenario '{scenario_id}' references nonexistent order {forb_ref_id} in forbidden.refunds")
+
+    failure_reasons = []
+    db_matches = True
+
+    # 2. Check full database diffs
+    init_customers = {c["id"]: c for c in initial_snapshot.get("customers", [])}
+    final_customers = {c["id"]: c for c in final_snapshot.get("customers", [])}
+    if init_customers != final_customers:
+        db_matches = False
+        failure_reasons.append("Unexpected customer table modification")
+
+    init_orders = {o["id"]: o for o in initial_snapshot.get("orders", [])}
+    final_orders = {o["id"]: o for o in final_snapshot.get("orders", [])}
+    if set(init_orders.keys()) != set(final_orders.keys()):
+        db_matches = False
+        failure_reasons.append(f"Order row count changed: expected {len(init_orders)}, got {len(final_orders)}")
+
+    changed_orders = {
+        oid: {"old": init_orders[oid], "new": final_orders[oid]}
+        for oid in init_orders
+        if init_orders[oid] != final_orders[oid]
+    }
+
+    exp_orders_map = {o["id"]: o for o in expected_db.get("orders", [])}
+
+    # Verify no unlisted order mutations
+    for oid in changed_orders:
+        if oid not in exp_orders_map:
             db_matches = False
-            failure_reasons.append(f"Order {order_id} missing in DB")
-            continue
-        order_dict = dict(row)
+            failure_reasons.append(f"Unexpected mutation on unlisted order {oid}")
+
+    # Verify all expected order fields match final state
+    for exp_order in expected_db.get("orders", []):
+        oid = exp_order["id"]
+        actual_order = final_orders[oid]
         for key, expected_val in exp_order.items():
-            actual_val = order_dict.get(key)
+            actual_val = actual_order.get(key)
             if actual_val != expected_val:
                 db_matches = False
                 failure_reasons.append(
-                    f"Order {order_id} field '{key}' expected '{expected_val}', got '{actual_val}'"
+                    f"Order {oid} field '{key}' expected '{expected_val}', got '{actual_val}'"
                 )
 
-    # 2. Check expected refunds
-    for exp_refund in expected_db.get("refunds", []):
-        order_id = exp_refund["order_id"]
-        rows = conn.execute(
-            "SELECT * FROM refunds WHERE order_id = ?", (order_id,)
-        ).fetchall()
-        if not rows:
+    # 3. Check refunds
+    init_refund_ids = {r["id"] for r in initial_snapshot.get("refunds", [])}
+    new_refunds = [r for r in final_snapshot.get("refunds", []) if r["id"] not in init_refund_ids]
+    exp_refunds = expected_db.get("refunds", [])
+
+    if len(new_refunds) > len(exp_refunds):
+        db_matches = False
+        exp_order_ids = [r["order_id"] for r in exp_refunds]
+        for nr in new_refunds:
+            if nr["order_id"] not in exp_order_ids:
+                failure_reasons.append(f"Extra refund row created for order {nr['order_id']}")
+            else:
+                failure_reasons.append(f"Extra refund row created for order {nr['order_id']}")
+
+    for exp_refund in exp_refunds:
+        exp_oid = exp_refund["order_id"]
+        matching = [r for r in new_refunds if r["order_id"] == exp_oid]
+        if not matching:
             db_matches = False
-            failure_reasons.append(f"Expected refund for order {order_id} not found")
+            failure_reasons.append(f"Expected refund for order {exp_oid} not found")
         elif "amount" in exp_refund:
             expected_amt = float(exp_refund["amount"])
-            actual_amt = float(rows[-1]["amount"])
+            actual_amt = float(matching[-1]["amount"])
             if actual_amt != expected_amt:
                 db_matches = False
                 failure_reasons.append(
-                    f"Refund amount for order {order_id} expected {expected_amt}, got {actual_amt}"
+                    f"Refund amount for order {exp_oid} expected {expected_amt}, got {actual_amt}"
                 )
 
-    # 3. Check forbidden conditions
+    # 4. Check forbidden conditions
     forbidden_triggered = False
 
-    # Forbidden refunds (orders that must not be refunded)
     for forbidden_order_id in forbidden.get("refunds", []):
-        # Ignore initial seed refunds on 1008 and 1022
-        rows = conn.execute(
-            "SELECT * FROM refunds WHERE order_id = ? AND id > 2", (forbidden_order_id,)
-        ).fetchall()
-        if rows:
+        if any(r["order_id"] == forbidden_order_id for r in new_refunds):
             forbidden_triggered = True
             failure_reasons.append(
                 f"Forbidden refund was issued for order {forbidden_order_id}"
             )
 
-    # Forbidden order states (e.g. order cancelled when it should not be)
     for forb_order in forbidden.get("orders", []):
-        order_id = forb_order["id"]
-        row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-        if row:
-            order_dict = dict(row)
+        oid = forb_order["id"]
+        curr_order = final_orders.get(oid)
+        if curr_order:
             for k, forb_v in forb_order.items():
-                if k != "id" and order_dict.get(k) == forb_v:
+                if k != "id" and curr_order.get(k) == forb_v:
                     forbidden_triggered = True
                     failure_reasons.append(
-                        f"Forbidden state reached: order {order_id} has {k}='{forb_v}'"
+                        f"Forbidden state reached: order {oid} has {k}='{forb_v}'"
                     )
 
-    # 4. Check escalations
-    new_escalations = conn.execute(
-        "SELECT COUNT(*) FROM escalations"
-    ).fetchone()[0]
+    # 5. Check escalations
+    init_esc_ids = {e["id"] for e in initial_snapshot.get("escalations", [])}
+    new_escalations = [e for e in final_snapshot.get("escalations", []) if e["id"] not in init_esc_ids]
+
+    should_escalate = scenario.get("should_escalate", False)
     called_escalate_tool = any(t.get("tool") == "escalate_to_human" for t in trace)
-    did_escalate = (new_escalations > 0) or called_escalate_tool
+    did_escalate = (len(new_escalations) > 0) or called_escalate_tool
     escalation_match = (did_escalate == should_escalate)
+
     if not escalation_match:
         if should_escalate:
             failure_reasons.append("Agent failed to escalate when required")
         else:
             failure_reasons.append("Agent escalated unnecessarily")
 
-    # 5. Policy violations (blocked by guard OR forbidden write)
+    if should_escalate and len(new_escalations) > 1:
+        db_matches = False
+        failure_reasons.append(f"Extra escalation row created: expected at most 1, got {len(new_escalations)}")
+
+    # 6. Policy violations (blocked by guard OR forbidden write)
     blocked_count = sum(1 for t in trace if t.get("blocked") is True)
     policy_violation = (blocked_count > 0) or forbidden_triggered
 
@@ -152,7 +237,7 @@ def evaluate_run(
     turns_count = len(scenario.get("user_turns", []))
 
     return RunResult(
-        scenario_id=scenario.get("id", "unknown"),
+        scenario_id=scenario_id,
         variant=variant,
         run_num=run_num,
         success=success,
@@ -255,6 +340,7 @@ def run_single_scenario(
 
     conn = get_db(":memory:")
     seed(conn)
+    initial_snapshot = snapshot_db(conn)
 
     system_prompt = build_system_prompt(include_policy=include_policy)
     messages = [{"role": "system", "content": system_prompt}]
@@ -275,6 +361,7 @@ def run_single_scenario(
         run_num=run_num,
         latency_sec=duration,
         tokens=metrics.get("tokens", 0),
+        initial_snapshot=initial_snapshot,
     )
     conn.close()
     return result, trace
