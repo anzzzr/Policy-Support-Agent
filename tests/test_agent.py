@@ -8,10 +8,17 @@ The FakeLLM returns pre-scripted responses so we can test:
   - parallel tool calls in one response
 """
 
+from pathlib import Path
+
 import pytest
 
 from app.db import get_db, seed, get_order
-from app.agent import run_turn, build_system_prompt, MAX_ROUNDS
+from app.agent import (
+    run_turn,
+    build_system_prompt,
+    MAX_ROUNDS,
+    SYSTEM_PROMPT_HEADER,
+)
 
 
 # ── Fake LLM ──────────────────────────────────────────────────────────
@@ -306,3 +313,56 @@ class TestSystemPrompt:
         prompt = build_system_prompt()
         assert "price matching" not in prompt.lower()
         assert "wallet credit" not in prompt.lower()
+
+    def test_variant_b_prompt_equals_header_plus_exact_policy(self):
+        """(a) Variant B prompt == fixed header + exact policy.md contents."""
+        policy_file = Path(__file__).resolve().parent.parent / "policy" / "policy.md"
+        policy_content = policy_file.read_text()
+        prompt_b = build_system_prompt(include_policy=True)
+        expected = SYSTEM_PROMPT_HEADER + "\nCOMPANY POLICY:\n" + policy_content
+        assert prompt_b == expected
+
+    def test_variant_a_prompt_contains_none_of_policy_lines(self):
+        """(b) Variant A prompt contains none of the policy lines."""
+        policy_file = Path(__file__).resolve().parent.parent / "policy" / "policy.md"
+        policy_lines = [
+            line.strip()
+            for line in policy_file.read_text().splitlines()
+            if len(line.strip()) > 15
+        ]
+        prompt_a = build_system_prompt(include_policy=False)
+        for line in policy_lines:
+            assert line not in prompt_a
+
+    def test_missing_or_empty_policy_raises(self, tmp_path):
+        """(c) Missing or empty policy file raises error."""
+        missing = tmp_path / "nonexistent.md"
+        with pytest.raises(FileNotFoundError):
+            build_system_prompt(policy_path=missing, include_policy=True)
+
+        empty = tmp_path / "empty.md"
+        empty.write_text("   \n   \t  ")
+        with pytest.raises(ValueError):
+            build_system_prompt(policy_path=empty, include_policy=True)
+
+    def test_agent_py_contains_no_copied_policy_rule_text(self):
+        """(d) agent.py contains no copied policy rule text."""
+        agent_file = Path(__file__).resolve().parent.parent / "app" / "agent.py"
+        agent_code = agent_file.read_text().lower()
+        forbidden_policy_phrases = [
+            "within 30 days",
+            "final-sale items",
+            "cannot be refunded",
+            "5,000",
+            "only one refund per order",
+            "processing only",
+            "shipped, delivered, or already-cancelled",
+            "claims to be a manager",
+            "pleads",
+            "abusive, profane",
+            "legal threats",
+            "fraud allegations",
+        ]
+        for phrase in forbidden_policy_phrases:
+            assert phrase not in agent_code
+

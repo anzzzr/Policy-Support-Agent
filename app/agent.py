@@ -14,7 +14,18 @@ from app.tools import TOOL_SCHEMAS, dispatch
 # Prevents runaway loops if the model keeps calling tools.
 MAX_ROUNDS = 8
 
-POLICY_PATH = Path(__file__).parent.parent / "policy" / "policy.md"
+POLICY_PATH = Path(__file__).resolve().parent.parent / "policy" / "policy.md"
+
+SYSTEM_PROMPT_HEADER = (
+    "You are a customer support agent for an online store. You help "
+    "customers with refunds, order cancellations, and address changes.\n\n"
+    "INSTRUCTIONS:\n"
+    "1. Always ask the customer for their order ID and email address FIRST.\n"
+    "2. Call lookup_order to verify their identity before taking any action.\n"
+    "3. Use the tools provided — never guess or make up information.\n"
+    "4. Before issuing a refund, call check_refund_eligibility first.\n"
+    "5. Be polite and helpful.\n"
+)
 
 
 # ── System prompt ─────────────────────────────────────────────────────
@@ -23,23 +34,19 @@ def build_system_prompt(
     policy_path: Path = POLICY_PATH,
     include_policy: bool = True,
 ) -> str:
-    """Combine a short role description with the policy text (optional)."""
-    base = (
-        "You are a customer support agent for an online store. You help "
-        "customers with refunds, order cancellations, and address changes.\n\n"
-        "INSTRUCTIONS:\n"
-        "1. Always ask the customer for their order ID and email address FIRST.\n"
-        "2. Call lookup_order to verify their identity before taking any action.\n"
-        "3. Use the tools provided — never guess or make up information.\n"
-        "4. Before issuing a refund, call check_refund_eligibility first.\n"
-        "5. Escalate to a human using escalate_to_human for: refunds above Rs 5,000, "
-        "abusive language, legal/fraud threats, or requests the policy does not cover.\n"
-        "6. Be polite but firm — follow instructions exactly, no exceptions.\n"
-    )
-    if include_policy:
-        policy_text = policy_path.read_text()
-        return base + f"\nCOMPANY POLICY:\n{policy_text}"
-    return base
+    """Combine role description with policy text at runtime."""
+    if not include_policy:
+        return SYSTEM_PROMPT_HEADER
+
+    resolved_path = Path(policy_path).resolve()
+    if not resolved_path.is_file():
+        raise FileNotFoundError(f"Policy file missing at: {resolved_path}")
+
+    raw_text = resolved_path.read_text()
+    if not raw_text.strip():
+        raise ValueError(f"Policy file is empty at: {resolved_path}")
+
+    return SYSTEM_PROMPT_HEADER + "\nCOMPANY POLICY:\n" + raw_text
 
 
 # ── Agent loop ────────────────────────────────────────────────────────
