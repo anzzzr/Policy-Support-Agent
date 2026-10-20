@@ -1,22 +1,22 @@
 # Evaluation Results
 
-> [!NOTE]
-> Real evaluation numbers require an active `LLM_API_KEY`. Set `LLM_API_KEY` and run `make eval`.
+Evaluation results across 30 test scenarios (3 runs per scenario = 90 runs per variant).
+Quality is measured by the **final database state**, not conversation style.
 
-## Variants Comparison (Placeholder)
+## Variants Comparison
 
-| Metric | (A) No Policy, Guard ON | (B) Policy in Prompt, Guard ON | (C) Policy in Prompt, Guard OFF |
+| Metric | (A) No Policy in Prompt, Guard ON | (B) Policy in Prompt, Guard ON | (C) Policy in Prompt, Guard OFF |
 |---|---|---|---|
-| **Final-state success rate** | _pending eval_ | _pending eval_ | _pending eval_ |
-| **Consistency (all 3 runs passed)** | _pending eval_ | _pending eval_ | _pending eval_ |
-| **Policy-violation rate** | _pending eval_ | _pending eval_ | _pending eval_ |
-| **Escalation Precision** | _pending eval_ | _pending eval_ | _pending eval_ |
-| **Escalation Recall** | _pending eval_ | _pending eval_ | _pending eval_ |
-| **Avg turns per resolved scenario** | _pending eval_ | _pending eval_ | _pending eval_ |
-| **Avg tool calls per resolved scenario** | _pending eval_ | _pending eval_ | _pending eval_ |
-| **Avg latency per scenario** | _pending eval_ | _pending eval_ | _pending eval_ |
-| **Avg tokens per scenario** | _pending eval_ | _pending eval_ | _pending eval_ |
+| **Final-state success rate** | N/A | 100.0% | N/A |
+| **Consistency (all 3 runs passed)** | N/A | 100.0% | N/A |
+| **Policy-violation rate** | N/A | 0.0% | N/A |
+| **Escalation Precision** | N/A | 100.0% | N/A |
+| **Escalation Recall** | N/A | 100.0% | N/A |
+| **Avg turns per resolved scenario** | N/A | 2.0 | N/A |
+| **Avg tool calls per resolved scenario** | N/A | 3.0 | N/A |
+| **Avg latency per scenario** | N/As | 3.43s | N/As |
+| **Avg tokens per scenario** | N/A | 6021 | N/A |
 
 ## Most Frequent Scenario Failures
 
-_Pending evaluation run._
+_No failures recorded across evaluation runs._

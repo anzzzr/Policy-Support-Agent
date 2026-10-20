@@ -20,7 +20,7 @@ except ImportError:
     openai = None
 
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 
 def chat(messages: list[dict], tools: list[dict]) -> dict:
@@ -38,9 +38,10 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
             "The 'openai' package is required.  Install: pip install openai"
         )
 
-    api_key = os.environ.get("LLM_API_KEY") or os.environ.get("GROQ_API_KEY")
+    # Prioritize GROQ_API_KEY, then LLM_API_KEY
+    api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
     if not api_key:
-        raise RuntimeError("Set the LLM_API_KEY (or GROQ_API_KEY) environment variable.")
+        raise RuntimeError("Set GROQ_API_KEY (or LLM_API_KEY) environment variable.")
 
     base_url = os.environ.get("LLM_BASE_URL", DEFAULT_BASE_URL)
     model = os.environ.get("LLM_MODEL", DEFAULT_MODEL)

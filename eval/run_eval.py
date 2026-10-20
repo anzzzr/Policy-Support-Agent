@@ -387,7 +387,7 @@ def main():
     )
     cli_args = parser.parse_args()
 
-    api_key = os.environ.get("LLM_API_KEY")
+    api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
     scenarios = load_all_scenarios()
     if cli_args.limit:
         scenarios = scenarios[:cli_args.limit]
