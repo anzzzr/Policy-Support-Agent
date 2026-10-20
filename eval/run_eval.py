@@ -4,6 +4,7 @@ Evaluation harness — runs scenarios, scores final DB state, and writes RESULTS
 Quality is measured by the FINAL DATABASE STATE, not how the chat sounds.
 """
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -575,6 +576,9 @@ def main():
 
                     v_results.append(res)
                     all_results.append(res)
+                    policy_bytes = (ROOT_DIR / "policy" / "policy.md").read_bytes()
+                    current_policy_sha = hashlib.sha256(policy_bytes).hexdigest()
+
                     entry = {
                         "scenario_id": res.scenario_id,
                         "variant": res.variant,
@@ -589,6 +593,8 @@ def main():
                         "failure_reasons": res.failure_reasons,
                         "latency_sec": res.latency_sec,
                         "tokens": res.tokens,
+                        "policy_version": "v2",
+                        "policy_sha256": current_policy_sha,
                     }
                     jsonl_entries.append(entry)
                     with open(RESULTS_JSONL, "a") as fp:
