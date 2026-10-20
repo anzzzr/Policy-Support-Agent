@@ -33,8 +33,7 @@ def build_system_prompt(
         "3. Use the tools provided — never guess or make up information.\n"
         "4. Before issuing a refund, call check_refund_eligibility first.\n"
         "5. Escalate to a human using escalate_to_human for: refunds above Rs 5,000, "
-        "abusive language, legal/fraud threats, or requests the policy does not cover "
-        "(e.g. price matching, wallet credit).\n"
+        "abusive language, legal/fraud threats, or requests the policy does not cover.\n"
         "6. Be polite but firm — follow instructions exactly, no exceptions.\n"
     )
     if include_policy:

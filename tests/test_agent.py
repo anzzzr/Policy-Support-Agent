@@ -300,3 +300,9 @@ class TestSystemPrompt:
         assert "email" in prompt
         assert "lookup_order" in prompt
         assert "check_refund_eligibility" in prompt
+
+    def test_no_scenario_specific_examples_in_system_prompt(self):
+        """System prompt must remain general and free of evaluation scenario contamination."""
+        prompt = build_system_prompt()
+        assert "price matching" not in prompt.lower()
+        assert "wallet credit" not in prompt.lower()
