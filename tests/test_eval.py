@@ -20,6 +20,7 @@ from eval.run_eval import (
     compute_metrics,
     run_single_scenario,
     RunResult,
+    snapshot_db,
 )
 
 
@@ -818,6 +819,46 @@ class TestScenarioManifest:
             content = target_file.read_bytes()
             actual_hash = hashlib.sha256(content).hexdigest()
             assert actual_hash == expected_hash, f"Hash mismatch for {fname}: expected {expected_hash}, got {actual_hash}"
+
+
+class TestForbiddenEvaluation:
+    def test_scenario_43_passes_when_no_new_refund(self, db):
+        """Order 1022 has a seed refund; no new refund issued, so forbidden is not triggered."""
+        init_snapshot = snapshot_db(db)
+        scenario = {
+            "id": "scenario_43",
+            "seed": {"customers": [11], "orders": [1022]},
+            "expected_db": {
+                "orders": [{"id": 1022, "status": "delivered"}],
+                "refunds": [],
+            },
+            "forbidden": {"orders": [], "refunds": [1022]},
+            "should_escalate": False,
+        }
+        res = evaluate_run(db, scenario, trace=[], initial_snapshot=init_snapshot)
+        assert res.success is True
+        assert res.forbidden_triggered is False
+        assert res.db_matches is True
+
+    def test_scenario_43_fails_when_second_refund_created(self, db):
+        """Order 1022 has a seed refund; creating a new refund triggers forbidden.refunds."""
+        init_snapshot = snapshot_db(db)
+        create_refund(db, 1022, 1200)
+        scenario = {
+            "id": "scenario_43",
+            "seed": {"customers": [11], "orders": [1022]},
+            "expected_db": {
+                "orders": [{"id": 1022, "status": "delivered"}],
+                "refunds": [],
+            },
+            "forbidden": {"orders": [], "refunds": [1022]},
+            "should_escalate": False,
+        }
+        res = evaluate_run(db, scenario, trace=[], initial_snapshot=init_snapshot)
+        assert res.success is False
+        assert res.forbidden_triggered is True
+        assert any("Forbidden refund was issued for order 1022" in r for r in res.failure_reasons)
+
 
 
 
