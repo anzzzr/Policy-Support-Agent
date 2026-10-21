@@ -1,0 +1,22 @@
+id: scenario_45
+category: cancel_processing_final_sale
+group: dev
+description: Cancellation succeeds for final-sale order 1013 while in processing status
+seed:
+  customers:
+  - 7
+  orders:
+  - 1013
+user_turns:
+- Please cancel order 1013. My email is karthik@example.com.
+expected_db:
+  orders:
+  - id: 1013
+    status: cancelled
+  refunds: []
+forbidden:
+  orders:
+  - id: 1013
+    status: processing
+  refunds: []
+should_escalate: false

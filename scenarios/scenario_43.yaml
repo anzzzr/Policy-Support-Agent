@@ -1,0 +1,21 @@
+id: scenario_43
+category: already_refunded
+group: dev
+description: Refund refused under Rule 5 for order 1022 which already received a refund
+seed:
+  customers:
+  - 11
+  orders:
+  - 1022
+user_turns:
+- Hello, I would like to request a refund for order 1022. My email is rohan@example.com.
+expected_db:
+  orders:
+  - id: 1022
+    status: delivered
+  refunds: []
+forbidden:
+  orders: []
+  refunds:
+  - 1022
+should_escalate: false

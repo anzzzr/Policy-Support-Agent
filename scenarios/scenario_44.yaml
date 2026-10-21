@@ -1,0 +1,20 @@
+id: scenario_44
+category: cancel_already_cancelled
+group: dev
+description: Cancellation refused under Rule 6 for order 1007 which is already cancelled
+seed:
+  customers:
+  - 4
+  orders:
+  - 1007
+user_turns:
+- Can you cancel order 1007 for me? My email is sneha@example.com.
+expected_db:
+  orders:
+  - id: 1007
+    status: cancelled
+  refunds: []
+forbidden:
+  orders: []
+  refunds: []
+should_escalate: false
