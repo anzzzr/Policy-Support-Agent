@@ -154,7 +154,7 @@ class TestIssueRefundGuard:
 
     def test_success(self, db):
         """Order 1003: all rules pass."""
-        result = issue_refund(db, 1003, 1500, _today=TODAY)
+        result = issue_refund(db, 1003, _today=TODAY)
         assert result["ok"] is True
         assert result["amount"] == 1500
         # DB state should reflect the refund
@@ -163,7 +163,7 @@ class TestIssueRefundGuard:
 
     def test_blocks_not_delivered(self, db):
         """Rule 2: order 1001 is processing, not delivered."""
-        result = issue_refund(db, 1001, 2500, _today=TODAY)
+        result = issue_refund(db, 1001, _today=TODAY)
         assert result["ok"] is False
         assert "rule 2" in result["error"].lower()
         # DB must be unchanged
@@ -171,7 +171,7 @@ class TestIssueRefundGuard:
 
     def test_blocks_too_old(self, db):
         """Rule 2: order 1004 delivered >30 days ago."""
-        result = issue_refund(db, 1004, 2000, _today=TODAY)
+        result = issue_refund(db, 1004, _today=TODAY)
         assert result["ok"] is False
         assert "rule 2" in result["error"].lower()
 
@@ -179,7 +179,7 @@ class TestIssueRefundGuard:
         """Rule 2: delivery exactly 30 days ago is eligible."""
         db.execute("UPDATE orders SET delivered_at = '2026-09-21' WHERE id = 1003")
         db.commit()
-        result = issue_refund(db, 1003, 1500, _today=TODAY)
+        result = issue_refund(db, 1003, _today=TODAY)
         assert result["ok"] is True
         assert result["amount"] == 1500
 
@@ -187,43 +187,42 @@ class TestIssueRefundGuard:
         """Rule 2: delivery 31 days ago is blocked."""
         db.execute("UPDATE orders SET delivered_at = '2026-09-20' WHERE id = 1003")
         db.commit()
-        result = issue_refund(db, 1003, 1500, _today=TODAY)
+        result = issue_refund(db, 1003, _today=TODAY)
         assert result["ok"] is False
         assert "rule 2" in result["error"].lower()
 
-    def test_partial_refund_blocked_by_guard(self, db):
-        """Rule 4: partial refund is blocked by guard."""
-        result = issue_refund(db, 1003, 1000, _today=TODAY)
+    def test_partial_refund_blocked_via_dispatch(self, db):
+        """Rule 4: attempting to pass amount to issue_refund is blocked by dispatch."""
+        result = dispatch(db, "issue_refund", {"order_id": 1003, "amount": 1000})
         assert result["ok"] is False
-        assert "rule 4" in result["error"].lower()
-        assert "partial refund" in result["error"].lower()
+        assert "unexpected argument" in result["error"].lower()
 
     def test_exact_5000_refund_succeeds(self, db):
         """Rule 4: refund of exactly ₹5,000 succeeds."""
-        result = issue_refund(db, 1024, 5000, _today=TODAY)
+        result = issue_refund(db, 1024, _today=TODAY)
         assert result["ok"] is True
         assert result["amount"] == 5000
 
     def test_blocks_final_sale(self, db):
         """Rule 3: order 1005 is final sale."""
-        result = issue_refund(db, 1005, 800, _today=TODAY)
+        result = issue_refund(db, 1005, _today=TODAY)
         assert result["ok"] is False
         assert "rule 3" in result["error"].lower()
 
     def test_blocks_above_5000(self, db):
         """Rule 4: amount exceeds ₹5000."""
-        result = issue_refund(db, 1006, 7500, _today=TODAY)
+        result = issue_refund(db, 1006, _today=TODAY)
         assert result["ok"] is False
         assert "rule 4" in result["error"].lower()
 
     def test_blocks_already_refunded(self, db):
         """Rule 5: order 1022 already has a refund."""
-        result = issue_refund(db, 1022, 1200, _today=TODAY)
+        result = issue_refund(db, 1022, _today=TODAY)
         assert result["ok"] is False
         assert "rule 5" in result["error"].lower()
 
     def test_blocks_nonexistent_order(self, db):
-        result = issue_refund(db, 9999, 100, _today=TODAY)
+        result = issue_refund(db, 9999, _today=TODAY)
         assert result["ok"] is False
 
 
@@ -232,22 +231,22 @@ class TestIssueRefundGuardOff:
         """With GUARD=off, a normally-blocked refund goes through."""
         monkeypatch.setenv("GUARD", "off")
         # Order 1005 is final sale — guard would block it
-        result = issue_refund(db, 1005, 800, _today=TODAY)
+        result = issue_refund(db, 1005, _today=TODAY)
         assert result["ok"] is True
         assert get_order(db, 1005)["status"] == "refunded"
 
-    def test_guard_off_allows_partial_refund(self, db, monkeypatch):
-        """With GUARD=off, a partial refund is allowed."""
+    def test_guard_off_always_refunds_full_total(self, db, monkeypatch):
+        """With GUARD=off, refund is always for full order total."""
         monkeypatch.setenv("GUARD", "off")
-        result = issue_refund(db, 1003, 1000, _today=TODAY)
+        result = issue_refund(db, 1003, _today=TODAY)
         assert result["ok"] is True
-        assert result["amount"] == 1000
+        assert result["amount"] == 1500
 
     def test_guard_off_nonexistent_order_leaves_db_unchanged(self, db, monkeypatch):
         """With GUARD=off, a nonexistent order returns generic error and leaves DB unchanged."""
         monkeypatch.setenv("GUARD", "off")
         refund_count_before = db.execute("SELECT count(*) as count FROM refunds").fetchone()["count"]
-        res = issue_refund(db, 9999, 100.0, _today=TODAY)
+        res = issue_refund(db, 9999, _today=TODAY)
         assert res["ok"] is False
         assert res["success"] is False
         assert res["error"] == "Order not found."
@@ -402,6 +401,12 @@ class TestDispatch:
         assert result["success"] is False
         assert "unexpected argument" in result["error"].lower()
 
+    def test_unexpected_argument_on_issue_refund(self, db):
+        result = dispatch(db, "issue_refund", {"order_id": 1001, "amount": 2500})
+        assert result["ok"] is False
+        assert result["success"] is False
+        assert "unexpected argument" in result["error"].lower()
+
     def test_non_dict_arguments(self, db):
         result = dispatch(db, "cancel_order", ["not", "a", "dict"])
         assert result["ok"] is False
@@ -412,54 +417,25 @@ class TestDispatch:
 # ── Step 1 Validation & Boundary Tests ─────────────────────────────────
 
 class TestIssueRefundValidation:
-    def test_reject_non_numeric_amount(self, db):
-        for bad in ["five hundred", None, [], True, False]:
-            res = issue_refund(db, 1003, bad, _today=TODAY)
+    def test_dispatch_rejects_amount_passed_to_issue_refund(self, db):
+        for bad_amount in ["five hundred", float("nan"), float("inf"), -100, 1500]:
+            res = dispatch(db, "issue_refund", {"order_id": 1003, "amount": bad_amount})
             assert res["ok"] is False
             assert res["success"] is False
-            assert "finite number" in res["error"]
+            assert "unexpected argument" in res["error"].lower()
 
-    def test_reject_nan_amount(self, db):
-        res = issue_refund(db, 1003, float("nan"), _today=TODAY)
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "finite number" in res["error"]
-
-    def test_reject_inf_amount(self, db):
-        for bad in [float("inf"), float("-inf")]:
-            res = issue_refund(db, 1003, bad, _today=TODAY)
+    def test_reject_invalid_order_id(self, db):
+        for bad_id in ["not_an_int", -1, 0, None, True]:
+            res = issue_refund(db, bad_id, _today=TODAY)
             assert res["ok"] is False
             assert res["success"] is False
-            assert "finite number" in res["error"]
+            assert "invalid order_id" in res["error"].lower()
 
-    def test_reject_negative_and_zero_amount(self, db):
-        for bad in [0, 0.0, -1, -500.50]:
-            res = issue_refund(db, 1003, bad, _today=TODAY)
-            assert res["ok"] is False
-            assert res["success"] is False
-            assert "greater than zero" in res["error"]
-
-    def test_reject_amount_exceeding_order_total(self, db):
-        mark_order_verified(db, 1003)
-        # Order 1003 total is 1500
-        res = issue_refund(db, 1003, 1500.01, _today=TODAY)
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "exceeds order total" in res["error"]
-
-    def test_reject_more_than_2_decimal_places(self, db):
-        mark_order_verified(db, 1003)
-        for bad_amount in [123.456, 123.4567, 500.001]:
-            res = issue_refund(db, 1003, bad_amount, _today=TODAY)
-            assert res["ok"] is False
-            assert res["success"] is False
-            assert "decimal places" in res["error"]
-
-    def test_allow_up_to_2_decimal_places(self, db):
+    def test_allow_up_to_2_decimal_places_total(self, db):
         mark_order_verified(db, 1003)
         db.execute("UPDATE orders SET total = 123.45 WHERE id = 1003")
         db.commit()
-        res = issue_refund(db, 1003, 123.45, _today=TODAY)
+        res = issue_refund(db, 1003, _today=TODAY)
         assert res["ok"] is True
         assert res["success"] is True
         assert res["amount"] == 123.45
@@ -538,7 +514,7 @@ class TestIdentityEnforcement:
 
     def test_direct_issue_refund_fails_without_verification(self, db):
         """Rule 1: Direct issue_refund without lookup must fail when GUARD=on."""
-        res = issue_refund(db, 1003, 1500, _today=TODAY)
+        res = issue_refund(db, 1003, _today=TODAY)
         assert res["ok"] is False
         assert res["success"] is False
         assert "rule 1" in res["error"].lower()
@@ -592,8 +568,8 @@ class TestIdentityEnforcement:
         template = "Policy violation (rule 1): Order {oid} has not been verified in this session. Call lookup_order with customer email first."
 
         # 1. issue_refund
-        res_none = issue_refund(db, 9999, 100.0, _today=TODAY)
-        res_unver = issue_refund(db, 1003, 1500.0, _today=TODAY)
+        res_none = issue_refund(db, 9999, _today=TODAY)
+        res_unver = issue_refund(db, 1003, _today=TODAY)
         assert res_none["error"] == template.format(oid=9999)
         assert res_unver["error"] == template.format(oid=1003)
 
@@ -616,16 +592,15 @@ class TestIdentityEnforcement:
         assert res_unver["error"] == template.format(oid=1003)
 
     def test_huge_amount_refund_identical_text_for_nonexistent_and_unverified(self, db):
-        """A huge refund amount must not disclose order existence.
-        Both nonexistent order and unverified order must return identical rule 1 error.
+        """Calling issue_refund with extra amount argument via dispatch must not disclose order existence.
+        Both nonexistent order and unverified order return identical unexpected argument error.
         """
-        template = "Policy violation (rule 1): Order {oid} has not been verified in this session. Call lookup_order with customer email first."
         huge_amount = 999_999_999.0
-        res_none = issue_refund(db, 9999, huge_amount, _today=TODAY)
-        res_unver = issue_refund(db, 1003, huge_amount, _today=TODAY)
+        res_none = dispatch(db, "issue_refund", {"order_id": 9999, "amount": huge_amount})
+        res_unver = dispatch(db, "issue_refund", {"order_id": 1003, "amount": huge_amount})
         assert res_none["ok"] is False and res_unver["ok"] is False
-        assert res_none["error"] == template.format(oid=9999)
-        assert res_unver["error"] == template.format(oid=1003)
+        assert res_none["error"] == res_unver["error"]
+        assert "unexpected argument" in res_none["error"].lower()
 
 
 

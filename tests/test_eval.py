@@ -473,7 +473,7 @@ class TestRunSingleScenarioWithMockLLM:
                 "tool_calls": [
                     {
                         "id": "c2", "type": "function",
-                        "function": {"name": "issue_refund", "arguments": {"order_id": 1003, "amount": 1500.0}},
+                        "function": {"name": "issue_refund", "arguments": {"order_id": 1003}},
                     }
                 ],
             },

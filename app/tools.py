@@ -262,54 +262,22 @@ def check_refund_eligibility(
 def issue_refund(
     conn: sqlite3.Connection,
     order_id: int,
-    amount: float,
     *,
     _today: date | None = None,
 ) -> dict:
-    """Issue a refund.  The guard re-checks rules 2-5 in code.
+    """Issue a full refund for an order. The guard re-checks rules 1-5 in code.
 
-    Validation on type, NaN, infinite, negative, and excess over total runs
-    even when GUARD=off. Policy rules (Rule 1 verification, Rule 2 30-day/delivered,
-    Rule 3 final-sale, Rule 4 full-order amount in integer paise and limit <= 5000,
-    Rule 5 single refund) are enforced when GUARD=on.
+    Validation on order_id runs even when GUARD=off. Policy rules (Rule 1 verification,
+    Rule 2 30-day/delivered, Rule 3 final-sale, Rule 4 limit <= 5000, Rule 5 single refund)
+    are enforced when GUARD=on. Always refunds the full order total.
     """
     valid_id, err_id = _validate_order_id(order_id)
     if not valid_id:
         return {"ok": False, "success": False, "error": err_id}
 
-    # 1. Input validation on amount (always active, even when GUARD=off)
-    if (
-        amount is None
-        or isinstance(amount, bool)
-        or not isinstance(amount, (int, float))
-        or math.isnan(amount)
-        or math.isinf(amount)
-    ):
-        return {
-            "ok": False,
-            "success": False,
-            "error": "Invalid refund amount: must be a finite number.",
-        }
-
-    if amount <= 0:
-        return {
-            "ok": False,
-            "success": False,
-            "error": "Invalid refund amount: must be greater than zero.",
-        }
-
-    # Reject amounts with more than 2 decimal places
-    if round(abs(amount * 100 - round(amount * 100)), 5) > 0:
-        return {
-            "ok": False,
-            "success": False,
-            "error": "Invalid refund amount: exceeds maximum 2 decimal places.",
-        }
-
-    amount = round(float(amount), 2)
     order = db.get_order(conn, order_id)
 
-    # 2. Policy guard enforcement (active when GUARD=on)
+    # Policy guard enforcement (active when GUARD=on)
     if _guard_enabled():
         # Existence and verification check runs FIRST: identical error for nonexistent and unverified
         if order is None or not is_order_verified(conn, order_id):
@@ -317,13 +285,6 @@ def issue_refund(
                 "1",
                 f"Order {order_id} has not been verified in this session. Call lookup_order with customer email first.",
             )
-
-        if amount > order["total"]:
-            return {
-                "ok": False,
-                "success": False,
-                "error": "Refund amount exceeds order total.",
-            }
 
         if order["status"] != "delivered":
             return _block("2", f"Order status is '{order['status']}', must be 'delivered'.")
@@ -337,16 +298,7 @@ def issue_refund(
         if order["is_final_sale"]:
             return _block("3", "Final-sale items cannot be refunded.")
 
-        # Compare in integer paise (avoids float comparison inaccuracy)
-        amount_paise = round(amount * 100)
         total_paise = round(order["total"] * 100)
-
-        if amount_paise != total_paise:
-            return _block(
-                "4",
-                "Partial refunds are not permitted. Refund amount must equal order total.",
-            )
-
         if total_paise > 500000:
             return _block("4", "Amount exceeds ₹5,000; must escalate.")
 
@@ -355,14 +307,8 @@ def issue_refund(
     else:
         if order is None:
             return {"ok": False, "success": False, "error": "Order not found."}
-        if amount > order["total"]:
-            return {
-                "ok": False,
-                "success": False,
-                "error": "Refund amount exceeds order total.",
-            }
 
-    refund = db.create_refund(conn, order_id, amount)
+    refund = db.create_refund(conn, order_id, order["total"])
     return {
         "ok": True,
         "success": True,
@@ -584,7 +530,7 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "issue_refund",
             "description": (
-                "Issue a refund for an order. Only call after check_refund_eligibility "
+                "Issue a full refund for an order. Only call after check_refund_eligibility "
                 "confirms the order is eligible. Refunds above Rs 5,000 must be "
                 "escalated instead."
             ),
@@ -593,14 +539,10 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "order_id": {
                         "type": "integer",
-                        "description": "The order ID to refund.",
-                    },
-                    "amount": {
-                        "type": "number",
-                        "description": "Refund amount in rupees (must equal full order total up to Rs 5,000).",
+                        "description": "The order ID to refund (always refunds the full order total).",
                     },
                 },
-                "required": ["order_id", "amount"],
+                "required": ["order_id"],
             },
         },
     },

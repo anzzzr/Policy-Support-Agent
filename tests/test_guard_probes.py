@@ -14,6 +14,7 @@ from app.db import get_connection, get_order
 from app.tools import (
     cancel_order,
     check_refund_eligibility,
+    dispatch,
     issue_refund,
     lookup_order,
     update_address,
@@ -34,42 +35,42 @@ class TestGuardProbesEligibleOrder:
 
     def test_negative_refund_amount(self, conn):
         lookup_order(conn, 1024, "kavita@example.com")
-        res = issue_refund(conn, 1024, -500.0, _today=EVAL_DATE)
+        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": -500.0})
         assert res["ok"] is False
         assert res["success"] is False
-        assert "greater than zero" in res["error"]
+        assert "unexpected argument" in res["error"].lower()
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_zero_refund_amount(self, conn):
         lookup_order(conn, 1024, "kavita@example.com")
-        res = issue_refund(conn, 1024, 0.0, _today=EVAL_DATE)
+        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": 0.0})
         assert res["ok"] is False
         assert res["success"] is False
-        assert "greater than zero" in res["error"]
+        assert "unexpected argument" in res["error"].lower()
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_over_total_refund_amount(self, conn):
         lookup_order(conn, 1024, "kavita@example.com")
-        res = issue_refund(conn, 1024, 6000.0, _today=EVAL_DATE)
+        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": 6000.0})
         assert res["ok"] is False
         assert res["success"] is False
-        assert "exceeds order total" in res["error"]
+        assert "unexpected argument" in res["error"].lower()
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_nan_refund_amount(self, conn):
         lookup_order(conn, 1024, "kavita@example.com")
-        res = issue_refund(conn, 1024, float("nan"), _today=EVAL_DATE)
+        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": float("nan")})
         assert res["ok"] is False
         assert res["success"] is False
-        assert "finite number" in res["error"]
+        assert "unexpected argument" in res["error"].lower()
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_string_refund_amount(self, conn):
         lookup_order(conn, 1024, "kavita@example.com")
-        res = issue_refund(conn, 1024, "five thousand", _today=EVAL_DATE)
+        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": "five thousand"})
         assert res["ok"] is False
         assert res["success"] is False
-        assert "finite number" in res["error"]
+        assert "unexpected argument" in res["error"].lower()
         assert get_order(conn, 1024)["status"] == "delivered"
 
 
@@ -86,7 +87,7 @@ class TestDirectWriteCallsWithoutVerifiedSession:
 
     def test_direct_issue_refund_eligible_order(self, conn):
         # Order 1024 is delivered and eligible in seed, but unverified in this session
-        res = issue_refund(conn, 1024, 5000.0, _today=EVAL_DATE)
+        res = issue_refund(conn, 1024, _today=EVAL_DATE)
         assert res["ok"] is False
         assert res["success"] is False
         assert "rule 1" in res["error"].lower()
@@ -128,55 +129,55 @@ class TestGuardOffDomainInvariants:
 
     def test_guard_off_rejects_nan_amount(self, conn):
         count_before = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
-        res = issue_refund(conn, 1024, float("nan"), _today=EVAL_DATE)
+        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": float("nan")})
         assert res["ok"] is False
         assert res["success"] is False
-        assert "finite number" in res["error"]
+        assert "unexpected argument" in res["error"].lower()
         assert conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"] == count_before
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_guard_off_rejects_negative_amount(self, conn):
         count_before = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
-        res = issue_refund(conn, 1024, -100.0, _today=EVAL_DATE)
+        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": -100.0})
         assert res["ok"] is False
         assert res["success"] is False
-        assert "greater than zero" in res["error"]
+        assert "unexpected argument" in res["error"].lower()
         assert conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"] == count_before
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_guard_off_rejects_string_amount(self, conn):
         count_before = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
-        res = issue_refund(conn, 1024, "5000", _today=EVAL_DATE)
+        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": "5000"})
         assert res["ok"] is False
         assert res["success"] is False
-        assert "finite number" in res["error"]
+        assert "unexpected argument" in res["error"].lower()
         assert conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"] == count_before
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_guard_off_rejects_bool_amount(self, conn):
         count_before = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
         for bad_bool in [True, False]:
-            res = issue_refund(conn, 1024, bad_bool, _today=EVAL_DATE)
+            res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": bad_bool})
             assert res["ok"] is False
             assert res["success"] is False
-            assert "finite number" in res["error"]
+            assert "unexpected argument" in res["error"].lower()
         assert conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"] == count_before
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_guard_off_rejects_infinity_amount(self, conn):
         count_before = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
         for bad_inf in [float("inf"), float("-inf")]:
-            res = issue_refund(conn, 1024, bad_inf, _today=EVAL_DATE)
+            res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": bad_inf})
             assert res["ok"] is False
             assert res["success"] is False
-            assert "finite number" in res["error"]
+            assert "unexpected argument" in res["error"].lower()
         assert conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"] == count_before
         assert get_order(conn, 1024)["status"] == "delivered"
 
     def test_guard_off_rejects_empty_string_order_id(self, conn):
         order_snapshot = conn.execute("SELECT id, status, total, address FROM orders").fetchall()
         for func in [
-            lambda: issue_refund(conn, "", 5000.0, _today=EVAL_DATE),
+            lambda: issue_refund(conn, "", _today=EVAL_DATE),
             lambda: cancel_order(conn, ""),
             lambda: update_address(conn, "", "123 Main St"),
         ]:
@@ -190,7 +191,7 @@ class TestGuardOffDomainInvariants:
     def test_guard_off_rejects_sql_injection_order_id(self, conn):
         order_snapshot = conn.execute("SELECT id, status, total, address FROM orders").fetchall()
         for func in [
-            lambda: issue_refund(conn, "1024; DROP TABLE orders;--", 5000.0, _today=EVAL_DATE),
+            lambda: issue_refund(conn, "1024; DROP TABLE orders;--", _today=EVAL_DATE),
             lambda: cancel_order(conn, "1001 OR 1=1"),
             lambda: update_address(conn, "1001'--", "123 Main St"),
         ]:
@@ -203,9 +204,9 @@ class TestGuardOffDomainInvariants:
 
     def test_guard_off_allows_double_refund(self, conn):
         # With GUARD=off, Rule 5 is disabled: multiple refunds are permitted
-        first = issue_refund(conn, 1024, 5000.0, _today=EVAL_DATE)
+        first = issue_refund(conn, 1024, _today=EVAL_DATE)
         assert first["ok"] is True
-        second = issue_refund(conn, 1024, 5000.0, _today=EVAL_DATE)
+        second = issue_refund(conn, 1024, _today=EVAL_DATE)
         assert second["ok"] is True
 
     def test_guard_off_allows_refund_after_cancel(self, conn):
@@ -213,16 +214,17 @@ class TestGuardOffDomainInvariants:
         cancel_res = cancel_order(conn, 1001)
         assert cancel_res["ok"] is True
         assert get_order(conn, 1001)["status"] == "cancelled"
-        res = issue_refund(conn, 1001, 2500.0, _today=EVAL_DATE)
+        res = issue_refund(conn, 1001, _today=EVAL_DATE)
         assert res["ok"] is True
 
     def test_guard_off_allows_cancel_after_refund(self, conn):
         # With GUARD=off, Rule 6 is disabled: cancelling refunded order is permitted
-        issue_res = issue_refund(conn, 1024, 5000.0, _today=EVAL_DATE)
+        issue_res = issue_refund(conn, 1024, _today=EVAL_DATE)
         assert issue_res["ok"] is True
         assert get_order(conn, 1024)["status"] == "refunded"
         res = cancel_order(conn, 1024)
         assert res["ok"] is True
+        assert get_order(conn, 1024)["status"] == "cancelled"
         assert get_order(conn, 1024)["status"] == "cancelled"
 
     def test_guard_off_rejects_10000_char_address(self, conn):
@@ -249,12 +251,12 @@ class TestPolicyRulesGuardOn:
 
     def test_guard_on_blocks_double_refund(self, conn):
         # Order 1022 already has a refund row in seed; Rule 5 blocks it
-        res = issue_refund(conn, 1022, 1200.0, _today=EVAL_DATE)
+        res = issue_refund(conn, 1022, _today=EVAL_DATE)
         assert res["ok"] is False
         assert "rule 1" in res["error"].lower()
 
         lookup_order(conn, 1022, "rohan@example.com")
-        res2 = issue_refund(conn, 1022, 1200.0, _today=EVAL_DATE)
+        res2 = issue_refund(conn, 1022, _today=EVAL_DATE)
         assert res2["ok"] is False
         assert "rule 5" in res2["error"].lower()
 
@@ -264,7 +266,7 @@ class TestPolicyRulesGuardOn:
         assert cancel_res["ok"] is True
         assert get_order(conn, 1001)["status"] == "cancelled"
 
-        res = issue_refund(conn, 1001, 2500.0, _today=EVAL_DATE)
+        res = issue_refund(conn, 1001, _today=EVAL_DATE)
         assert res["ok"] is False
         assert "rule 2" in res["error"].lower()
 
