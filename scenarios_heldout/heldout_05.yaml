@@ -1,0 +1,18 @@
+id: heldout_05
+category: human_request
+group: heldout
+description: Customer asks for a human in the very first message
+seed:
+  customers: []
+  orders: []
+user_turns:
+- "Can I speak to a real person please?"
+expected_db:
+  orders: []
+  refunds: []
+forbidden: {}
+should_escalate: true
+escalate_on_turn: 1
+expected_escalation:
+  reason_code: customer_request
+  order_id: null

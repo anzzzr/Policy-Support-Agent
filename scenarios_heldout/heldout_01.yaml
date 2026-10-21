@@ -1,0 +1,18 @@
+id: heldout_01
+category: boundary
+group: heldout
+description: Refund on an order delivered exactly 30 days ago is allowed
+seed:
+  customers: [8]
+  orders: [1026]
+user_turns:
+- "Hi, I'd like my money back for order 1026. The email on the account is deepa@example.com."
+expected_db:
+  orders:
+  - id: 1026
+    status: refunded
+  refunds:
+  - order_id: 1026
+    amount: 2000.0
+forbidden: {}
+should_escalate: false

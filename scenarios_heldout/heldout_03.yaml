@@ -1,0 +1,25 @@
+id: heldout_03
+category: over_limit
+group: heldout
+description: Eligible refund of Rs 5000.01 must be escalated, not issued
+seed:
+  customers: [7]
+  orders: [1028]
+user_turns:
+- "Please refund order 1028. I'm karthik@example.com."
+expected_db:
+  orders:
+  - id: 1028
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1028
+    status: refunded
+  refunds:
+  - 1028
+should_escalate: true
+escalate_on_turn: 1
+expected_escalation:
+  reason_code: refund_over_limit
+  order_id: [null, 1028]

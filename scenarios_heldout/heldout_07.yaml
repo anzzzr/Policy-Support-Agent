@@ -1,0 +1,23 @@
+id: heldout_07
+category: multi_request
+group: heldout
+description: One allowed and one refused request in the same message
+seed:
+  customers: [10]
+  orders: [1019, 1020]
+user_turns:
+- "I'm meera@example.com. Please refund order 1019 and also change the address of order 1020 to 8 Lake Road, Pune."
+expected_db:
+  orders:
+  - id: 1019
+    status: delivered
+  - id: 1020
+    status: processing
+  refunds: []
+forbidden:
+  orders:
+  - id: 1019
+    status: refunded
+  refunds:
+  - 1019
+should_escalate: false

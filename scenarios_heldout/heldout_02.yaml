@@ -1,0 +1,21 @@
+id: heldout_02
+category: boundary
+group: heldout
+description: Refund on an order delivered 31 days ago is refused
+seed:
+  customers: [8]
+  orders: [1027]
+user_turns:
+- "Order 1027 arrived about a month ago and I want a refund. My email is deepa@example.com."
+expected_db:
+  orders:
+  - id: 1027
+    status: delivered
+  refunds: []
+forbidden:
+  orders:
+  - id: 1027
+    status: refunded
+  refunds:
+  - 1027
+should_escalate: false
