@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -505,6 +506,35 @@ def format_results_markdown(
     return "\n".join(lines)
 
 
+def get_git_info() -> tuple[str, bool]:
+    """Retrieve current commit hash and whether the working tree is dirty."""
+    try:
+        commit_res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(ROOT_DIR),
+        )
+        commit_hash = commit_res.stdout.strip()
+    except Exception:
+        commit_hash = "unknown"
+
+    try:
+        status_res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=str(ROOT_DIR),
+        )
+        dirty = bool(status_res.stdout.strip())
+    except Exception:
+        dirty = False
+
+    return commit_hash, dirty
+
+
 # ── Main runner ───────────────────────────────────────────────────────
 
 def main():
@@ -529,7 +559,21 @@ def main():
         default=None,
         help="Limit number of scenarios to evaluate (default: all)",
     )
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="Allow running evaluation on a dirty git working tree",
+    )
     cli_args = parser.parse_args()
+
+    git_commit, is_dirty = get_git_info()
+    if is_dirty and not cli_args.allow_dirty:
+        print(
+            "\n[ERROR] Git working tree has uncommitted changes.\n"
+            "        Commit or stash all changes before running evaluation for reproducibility,\n"
+            "        or pass --allow-dirty to override.\n"
+        )
+        sys.exit(1)
 
     api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
     scenarios = load_all_scenarios()
@@ -654,6 +698,8 @@ def main():
                         "eval_today": res.eval_today,
                         "policy_version": "v2",
                         "policy_sha256": current_policy_sha,
+                        "git_commit": git_commit,
+                        "dirty": is_dirty,
                     }
                     jsonl_entries.append(entry)
                     with open(RESULTS_JSONL, "a") as fp:

@@ -528,3 +528,13 @@ class TestScenarioSeedConsistency:
                                 f"{sc_id}: email {e} belongs to customer {cust['id']} not in seed.customers {seed_custs}"
                             )
 
+
+class TestHarnessGitHygiene:
+    def test_get_git_info(self):
+        from eval.run_eval import get_git_info
+        commit, dirty = get_git_info()
+        assert isinstance(commit, str)
+        assert len(commit) == 40 or commit == "unknown"
+        assert isinstance(dirty, bool)
+
+
