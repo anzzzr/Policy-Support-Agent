@@ -946,6 +946,31 @@ class TestTagGating:
         verify_tag_gating(is_heldout=False)
 
 
+class TestSmokeFlag:
+    def test_evaluate_run_records_smoke_true(self, db):
+        scenario = {
+            "id": "scenario_01",
+            "seed": {"customers": [1], "orders": [1001]},
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "should_escalate": False,
+        }
+        res = evaluate_run(db, scenario, trace=[], smoke=True)
+        assert res.smoke is True
+
+    def test_evaluate_run_records_smoke_false_by_default(self, db):
+        scenario = {
+            "id": "scenario_01",
+            "seed": {"customers": [1], "orders": [1001]},
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "should_escalate": False,
+        }
+        res = evaluate_run(db, scenario, trace=[])
+        assert res.smoke is False
+
+
+
 
 
 

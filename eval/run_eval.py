@@ -54,6 +54,7 @@ class RunResult:
     tokens: int
     tool_arg_errors: int = 0
     pip_freeze_sha256: str = ""
+    smoke: bool = False
     category: str = ""
     group: str = "dev"
     eval_today: str = EVAL_TODAY
@@ -79,6 +80,7 @@ def evaluate_run(
     tokens: int = 0,
     initial_snapshot: dict[str, list[dict]] | None = None,
     messages: list[dict] | None = None,
+    smoke: bool = False,
 ) -> RunResult:
     """Compare final database state against expected_db and forbidden rules.
 
@@ -384,6 +386,7 @@ def evaluate_run(
         latency_sec=latency_sec,
         tokens=tokens,
         tool_arg_errors=tool_arg_errors_count,
+        smoke=smoke,
         category=scenario.get("category", ""),
         group=scenario.get("group", "dev"),
         failure_reasons=failure_reasons,
@@ -466,6 +469,7 @@ def run_single_scenario(
     guard_enabled: bool,
     run_num: int,
     chat_fn: Callable | None = None,
+    smoke: bool = False,
 ) -> tuple[RunResult, list[dict]]:
     """Execute one run of a scenario against an isolated DB."""
     # Configure environment for this run
@@ -501,6 +505,7 @@ def run_single_scenario(
         tokens=metrics.get("tokens", 0),
         initial_snapshot=initial_snapshot,
         messages=messages,
+        smoke=smoke,
     )
     conn.close()
     return result, trace
@@ -947,6 +952,13 @@ def main():
         action="store_true",
         help="Evaluate held-out scenarios (scenarios_heldout/) instead of dev scenarios",
     )
+    parser.add_argument(
+        "--smoke",
+        nargs="*",
+        default=None,
+        metavar="SCENARIO_ID",
+        help="Run smoke test for specified scenario IDs, bypassing freeze gate. Writes to eval/runs/smoke_<id>/ with smoke=true.",
+    )
     cli_args = parser.parse_args()
 
     git_commit, is_dirty = get_git_info()
@@ -958,16 +970,20 @@ def main():
         )
         sys.exit(1)
 
-    try:
-        verify_tag_gating(cli_args.heldout)
-    except RuntimeError as err:
-        print(f"\n[ERROR] Tag gating failure: {err}\n")
-        sys.exit(1)
+    if cli_args.smoke is None:
+        try:
+            verify_tag_gating(cli_args.heldout)
+        except RuntimeError as err:
+            print(f"\n[ERROR] Tag gating failure: {err}\n")
+            sys.exit(1)
 
-    run_id = cli_args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    raw_run_id = cli_args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = f"smoke_{raw_run_id}" if cli_args.smoke is not None else raw_run_id
     runs_dir = EVAL_DIR / "runs"
     run_dir = runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    if cli_args.smoke is not None:
+        (run_dir / ".smoke").touch()
     run_results_jsonl = run_dir / ("results_heldout.jsonl" if cli_args.heldout else "results.jsonl")
     run_results_md = run_dir / ("RESULTS_HELDOUT.md" if cli_args.heldout else "RESULTS.md")
 
@@ -978,9 +994,15 @@ def main():
         sys.exit(1)
 
     scenarios = load_all_scenarios(target_dir)
+    if cli_args.smoke is not None and len(cli_args.smoke) > 0:
+        smoke_ids = set(cli_args.smoke)
+        scenarios = [s for s in scenarios if s.get("id") in smoke_ids]
+        if not scenarios:
+            print(f"\n[ERROR] No matching scenarios found for --smoke: {cli_args.smoke}\n")
+            sys.exit(1)
     if cli_args.limit:
         scenarios = scenarios[:cli_args.limit]
-    set_name = "held-out" if cli_args.heldout else "dev"
+    set_name = "held-out" if cli_args.heldout else ("smoke" if cli_args.smoke is not None else "dev")
     print(f"Loaded {len(scenarios)} {set_name} scenarios from {target_dir}.")
 
     checkpoint_file = run_dir / "checkpoint.json"
@@ -1018,18 +1040,19 @@ def main():
         )
         run_results_md.write_text(placeholder_md)
         print(f"Wrote placeholder report to {run_results_md}.")
-        latest_path = runs_dir / "latest"
-        try:
-            if latest_path.is_symlink() or latest_path.exists():
-                if latest_path.is_dir() and not latest_path.is_symlink():
-                    import shutil
-                    shutil.rmtree(latest_path)
-                else:
-                    latest_path.unlink()
-            latest_path.symlink_to(run_dir.resolve(), target_is_directory=True)
-        except Exception:
-            import shutil
-            shutil.copytree(run_dir, latest_path, dirs_exist_ok=True)
+        if cli_args.smoke is None:
+            latest_path = runs_dir / "latest"
+            try:
+                if latest_path.is_symlink() or latest_path.exists():
+                    if latest_path.is_dir() and not latest_path.is_symlink():
+                        import shutil
+                        shutil.rmtree(latest_path)
+                    else:
+                        latest_path.unlink()
+                latest_path.symlink_to(run_dir.resolve(), target_is_directory=True)
+            except Exception:
+                import shutil
+                shutil.copytree(run_dir, latest_path, dirs_exist_ok=True)
         return
 
     # Variants definition
@@ -1111,6 +1134,7 @@ def main():
                         include_policy=v["include_policy"],
                         guard_enabled=v["guard"],
                         run_num=run_i,
+                        smoke=(cli_args.smoke is not None),
                     )
                     status_str = "PASS" if res.success else "FAIL"
                     if res.policy_violation:
@@ -1138,6 +1162,7 @@ def main():
                         "latency_sec": res.latency_sec,
                         "tokens": res.tokens,
                         "tool_arg_errors": res.tool_arg_errors,
+                        "smoke": res.smoke,
                         "eval_today": res.eval_today,
                         "policy_version": derive_policy_version(),
                         "policy_sha256": harness_hashes["policy_sha256"],
@@ -1232,19 +1257,20 @@ def main():
             fp.write(json.dumps(entry) + "\n")
     print(f"Wrote {len(jsonl_entries)} raw run records to {run_results_jsonl}")
 
-    # Update latest symlink / directory in eval/runs/
-    latest_path = runs_dir / "latest"
-    try:
-        if latest_path.is_symlink() or latest_path.exists():
-            if latest_path.is_dir() and not latest_path.is_symlink():
-                import shutil
-                shutil.rmtree(latest_path)
-            else:
-                latest_path.unlink()
-        latest_path.symlink_to(run_dir.resolve(), target_is_directory=True)
-    except Exception:
-        import shutil
-        shutil.copytree(run_dir, latest_path, dirs_exist_ok=True)
+    # Update latest symlink / directory in eval/runs/ (never for smoke runs)
+    if cli_args.smoke is None:
+        latest_path = runs_dir / "latest"
+        try:
+            if latest_path.is_symlink() or latest_path.exists():
+                if latest_path.is_dir() and not latest_path.is_symlink():
+                    import shutil
+                    shutil.rmtree(latest_path)
+                else:
+                    latest_path.unlink()
+            latest_path.symlink_to(run_dir.resolve(), target_is_directory=True)
+        except Exception:
+            import shutil
+            shutil.copytree(run_dir, latest_path, dirs_exist_ok=True)
 
 
 
