@@ -49,7 +49,7 @@ All modifications to evaluation scenarios and their rationales are recorded here
   - **Change:** Kept single user turn. Added `escalate_on_turn: 1`, `expected_escalation: {reason_code: "out_of_scope", order_id: [null, 1001]}`.
   - **Reason:** Expectation updated to match policy v2 Rule 9 (a price-match/store-credit request is an out-of-scope request that needs a decision the policy does not cover, requiring immediate escalation on turn 1).
 
-## 2026-10-22 — Escalation Reason Codes & Turn Expectations (Scenarios 09, 10, 26, 27, 31, 38, 39, 42) [Commit 559d1e3]
+## 2026-10-22 — Escalation Reason Codes & Turn Expectations (Scenarios 09, 10, 26, 27, 31, 38, 39, 42) [Commit cef57c4]
 - **`scenarios/scenario_09.yaml`**:
   - **Change:** Deleted second user turn; added `escalate_on_turn: 1`, `expected_escalation: {reason_code: refund_over_limit, order_id: [null, 1006]}`.
   - **Reason:** Expectation updated to match policy v2 Rule 9 and Rule 14.
