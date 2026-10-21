@@ -20,7 +20,6 @@ except ImportError:
     openai = None
 
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 
 def chat(messages: list[dict], tools: list[dict]) -> dict:
@@ -44,12 +43,12 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
         raise RuntimeError("Set GROQ_API_KEY (or LLM_API_KEY) environment variable.")
     api_key = api_key.strip().strip('"').strip("'")
 
-    base_url = os.environ.get("LLM_BASE_URL", DEFAULT_BASE_URL)
     model = os.environ.get("LLM_MODEL")
+    if not model or not model.strip():
+        raise RuntimeError("LLM_MODEL environment variable is required (no default).")
+    model = model.strip().strip('"').strip("'")
 
-    # If hitting Groq but model is set to an OpenAI model or unsupported model on this key, use Groq's verified model
-    if not model or ("api.groq.com" in base_url and (model.startswith("gpt-") or model.startswith("o1-") or model.startswith("o3-") or model.startswith("llama-"))):
-        model = DEFAULT_MODEL
+    base_url = os.environ.get("LLM_BASE_URL", DEFAULT_BASE_URL)
 
     client = openai.OpenAI(api_key=api_key, base_url=base_url)
 
@@ -70,13 +69,6 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
 
     try:
         resp = client.chat.completions.create(**kwargs)
-    except openai.NotFoundError as e:
-        if "model_not_found" in str(e).lower() and kwargs.get("model") != DEFAULT_MODEL:
-            print(f" [Model '{kwargs['model']}' not accessible, falling back to '{DEFAULT_MODEL}'] ", end="", flush=True)
-            kwargs["model"] = DEFAULT_MODEL
-            resp = client.chat.completions.create(**kwargs)
-        else:
-            raise
     except openai.RateLimitError:
         print(" [Rate-limit: waiting 15s for Groq TPM bucket...] ", end="", flush=True)
         import time

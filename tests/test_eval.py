@@ -687,6 +687,17 @@ class TestHarnessGitHygiene:
 
 
 class TestCheckpointResume:
+    @pytest.fixture(autouse=True)
+    def set_llm_model(self, monkeypatch):
+        monkeypatch.setenv("LLM_MODEL", "llama-3.3-70b-versatile")
+
+    def test_fingerprint_raises_when_llm_model_unset(self, monkeypatch):
+        from eval.run_eval import get_run_fingerprint
+
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        with pytest.raises(RuntimeError, match="LLM_MODEL environment variable is required"):
+            get_run_fingerprint("commit_hash_1")
+
     def test_fingerprint_contains_all_required_keys(self):
         from eval.run_eval import get_run_fingerprint
         fp = get_run_fingerprint("abc1234")

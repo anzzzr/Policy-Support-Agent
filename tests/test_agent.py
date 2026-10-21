@@ -366,3 +366,14 @@ class TestSystemPrompt:
         for phrase in forbidden_policy_phrases:
             assert phrase not in agent_code
 
+
+def test_chat_raises_when_llm_model_unset(monkeypatch):
+    import app.llm as llm
+
+    monkeypatch.setattr(llm, "openai", object())
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_dummy")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    with pytest.raises(RuntimeError, match="LLM_MODEL environment variable is required"):
+        llm.chat([], [])
+
+

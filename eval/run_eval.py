@@ -774,7 +774,6 @@ def get_run_fingerprint(
 ) -> dict[str, Any]:
     """Return the configuration fingerprint for reproducible evaluation runs."""
     from app.agent import MAX_ROUNDS
-    from app.llm import DEFAULT_MODEL
 
     policy_path = ROOT_DIR / "policy" / "policy.md"
     policy_sha256 = (
@@ -785,7 +784,9 @@ def get_run_fingerprint(
     seed_dump_sha256 = compute_seed_dump_sha256()
     scenarios_sha256 = compute_dir_sha256(SCENARIOS_DIR, "*.yaml")
 
-    effective_model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
+    effective_model = (model or os.environ.get("LLM_MODEL") or "").strip().strip('"').strip("'")
+    if not effective_model:
+        raise RuntimeError("LLM_MODEL environment variable is required (no default).")
     effective_temp = (
         temperature
         if temperature is not None
@@ -1194,6 +1195,14 @@ def main():
         verify_requirements_lock()
     except RuntimeError as err:
         print(f"\n[ERROR] Environment validation failure:\n{err}\n")
+        sys.exit(1)
+
+    llm_model = os.environ.get("LLM_MODEL")
+    if not llm_model or not llm_model.strip():
+        print(
+            "\n[ERROR] LLM_MODEL environment variable is required (no default).\n"
+            "        Set LLM_MODEL before running evaluation (e.g. export LLM_MODEL='llama-3.3-70b-versatile').\n"
+        )
         sys.exit(1)
 
     if cli_args.smoke is None:
