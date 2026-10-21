@@ -67,10 +67,15 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
     elif any(k in model.lower() for k in ["gpt-6", "luna", "o1", "o3"]):
         kwargs["reasoning_effort"] = "none"
 
+    retries = 0
+    rate_limit_wait_s = 0.0
+
     try:
         resp = client.chat.completions.create(**kwargs)
     except openai.RateLimitError:
         print(" [Rate-limit: waiting 15s for Groq TPM bucket...] ", end="", flush=True)
+        retries += 1
+        rate_limit_wait_s += 15.0
         import time
         time.sleep(15)
         resp = client.chat.completions.create(**kwargs)
@@ -85,12 +90,14 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
             retry_needed = True
 
         if retry_needed:
+            retries += 1
             try:
                 resp = client.chat.completions.create(**kwargs)
             except openai.BadRequestError as e2:
                 err_msg2 = str(e2).lower()
                 if "temperature" in err_msg2 and "temperature" in kwargs:
                     kwargs.pop("temperature", None)
+                    retries += 1
                     resp = client.chat.completions.create(**kwargs)
                 else:
                     raise
@@ -101,12 +108,13 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
     # ── Normalize to a plain dict ──
     result: dict = {"role": "assistant", "content": msg.content}
 
-    if hasattr(resp, "usage") and resp.usage:
-        result["_usage"] = {
-            "prompt_tokens": getattr(resp.usage, "prompt_tokens", 0),
-            "completion_tokens": getattr(resp.usage, "completion_tokens", 0),
-            "total_tokens": getattr(resp.usage, "total_tokens", 0),
-        }
+    result["_usage"] = {
+        "prompt_tokens": getattr(resp.usage, "prompt_tokens", 0) if (hasattr(resp, "usage") and resp.usage) else 0,
+        "completion_tokens": getattr(resp.usage, "completion_tokens", 0) if (hasattr(resp, "usage") and resp.usage) else 0,
+        "total_tokens": getattr(resp.usage, "total_tokens", 0) if (hasattr(resp, "usage") and resp.usage) else 0,
+        "retries": retries,
+        "rate_limit_wait_s": rate_limit_wait_s,
+    }
 
     if msg.tool_calls:
         result["tool_calls"] = [

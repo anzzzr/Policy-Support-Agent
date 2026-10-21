@@ -53,10 +53,16 @@ class RunResult:
     tool_calls: int
     latency_sec: float
     tokens: int
+    latency_without_rate_limit_sec: float = 0.0
+    llm_calls: int = 0
+    llm_retries: int = 0
+    rate_limit_wait_s: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     tool_errors: dict[str, int] = field(default_factory=dict)
     pip_freeze_sha256: str = ""
     smoke: bool = False
-    openai_version: str = ""
+    openai_client_version: str = ""
     sys_executable: str = ""
     python_version: str = ""
     category: str = ""
@@ -85,6 +91,12 @@ def evaluate_run(
     initial_snapshot: dict[str, list[dict]] | None = None,
     messages: list[dict] | None = None,
     smoke: bool = False,
+    latency_without_rate_limit_sec: float | None = None,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    llm_calls: int = 0,
+    llm_retries: int = 0,
+    rate_limit_wait_s: float = 0.0,
 ) -> RunResult:
     """Compare final database state against expected_db and forbidden rules.
 
@@ -397,6 +409,8 @@ def evaluate_run(
         + tool_errors["malformed_arguments"]
     )
 
+    lat_no_wait = latency_without_rate_limit_sec if latency_without_rate_limit_sec is not None else max(0.0, latency_sec - rate_limit_wait_s)
+
     return RunResult(
         scenario_id=scenario_id,
         variant=variant,
@@ -412,7 +426,13 @@ def evaluate_run(
         user_turns=turns_count,
         tool_calls=tool_calls_count,
         latency_sec=latency_sec,
+        latency_without_rate_limit_sec=lat_no_wait,
         tokens=tokens,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        llm_calls=llm_calls,
+        llm_retries=llm_retries,
+        rate_limit_wait_s=rate_limit_wait_s,
         tool_errors=tool_errors,
         smoke=smoke,
         category=scenario.get("category", ""),
@@ -512,7 +532,14 @@ def run_single_scenario(
     system_prompt = build_system_prompt(include_policy=include_policy)
     messages = [{"role": "system", "content": system_prompt}]
     trace: list[dict] = []
-    metrics: dict = {"tokens": 0}
+    metrics: dict = {
+        "tokens": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "llm_calls": 0,
+        "llm_retries": 0,
+        "rate_limit_wait_s": 0.0,
+    }
 
     start_time = time.time()
     for turn_idx, user_turn in enumerate(scenario.get("user_turns", []), 1):
@@ -522,6 +549,8 @@ def run_single_scenario(
         for t in trace[trace_len_before:]:
             t["turn"] = turn_idx
     duration = time.time() - start_time
+    wait_s = metrics.get("rate_limit_wait_s", 0.0)
+    duration_no_wait = max(0.0, duration - wait_s)
 
     result = evaluate_run(
         conn,
@@ -530,7 +559,13 @@ def run_single_scenario(
         variant=variant_name,
         run_num=run_num,
         latency_sec=duration,
+        latency_without_rate_limit_sec=duration_no_wait,
         tokens=metrics.get("tokens", 0),
+        prompt_tokens=metrics.get("prompt_tokens", 0),
+        completion_tokens=metrics.get("completion_tokens", 0),
+        llm_calls=metrics.get("llm_calls", 0),
+        llm_retries=metrics.get("llm_retries", 0),
+        rate_limit_wait_s=wait_s,
         initial_snapshot=initial_snapshot,
         messages=messages,
         smoke=smoke,
@@ -673,6 +708,9 @@ def format_results_markdown(rows: list[dict]) -> str:
         avg_turns = (sum(r.get("user_turns", 0) for r in resolved) / len(resolved)) if resolved else None
         avg_tool_calls = (sum(r.get("tool_calls", 0) for r in resolved) / len(resolved)) if resolved else None
         avg_latency = (sum(r.get("latency_sec", 0.0) for r in v_rows) / v_total) if v_total else None
+        avg_latency_no_wait = (
+            sum(r.get("latency_without_rate_limit_sec", r.get("latency_sec", 0.0)) for r in v_rows) / v_total
+        ) if v_total else None
         avg_tokens = (sum(r.get("tokens", 0) for r in v_rows) / v_total) if v_total else None
 
         v_metrics[v] = {
@@ -685,6 +723,7 @@ def format_results_markdown(rows: list[dict]) -> str:
             "avg_turns": f"{avg_turns:.1f}" if avg_turns is not None else "N/A",
             "avg_tool_calls": f"{avg_tool_calls:.1f}" if avg_tool_calls is not None else "N/A",
             "avg_latency": f"{avg_latency:.2f}s" if avg_latency is not None else "N/A",
+            "avg_latency_no_wait": f"{avg_latency_no_wait:.2f}s" if avg_latency_no_wait is not None else "N/A",
             "avg_tokens": f"{avg_tokens:.0f}" if avg_tokens is not None else "N/A",
         }
 
@@ -696,7 +735,8 @@ def format_results_markdown(rows: list[dict]) -> str:
         ("Escalation Recall", "recall_str"),
         ("Avg turns per resolved scenario", "avg_turns"),
         ("Avg tool calls per resolved scenario", "avg_tool_calls"),
-        ("Avg latency per scenario", "avg_latency"),
+        ("Avg latency per scenario (total)", "avg_latency"),
+        ("Avg latency per scenario (excl. rate-limit waits)", "avg_latency_no_wait"),
         ("Avg tokens per scenario", "avg_tokens"),
     ]
 
@@ -1408,7 +1448,15 @@ def main():
                         "did_escalate": res.did_escalate,
                         "failure_reasons": res.failure_reasons,
                         "latency_sec": res.latency_sec,
+                        "latency_without_rate_limit_sec": res.latency_without_rate_limit_sec,
+                        "llm_calls": res.llm_calls,
+                        "llm_retries": res.llm_retries,
+                        "rate_limit_wait_s": res.rate_limit_wait_s,
+                        "prompt_tokens": res.prompt_tokens,
+                        "completion_tokens": res.completion_tokens,
                         "tokens": res.tokens,
+                        "user_turns": res.user_turns,
+                        "tool_calls": res.tool_calls,
                         "tool_errors": res.tool_errors,
                         "smoke": res.smoke,
                         "eval_today": res.eval_today,
@@ -1418,7 +1466,6 @@ def main():
                         "scenarios_sha256": harness_hashes["scenarios_sha256"],
                         "heldout_sha256": harness_hashes["heldout_sha256"],
                         "pip_freeze_sha256": pip_freeze_hash,
-                        "openai_version": openai_version,
                         "openai_client_version": openai_version,
                         "sys_executable": sys.executable,
                         "python_version": platform.python_version(),

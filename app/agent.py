@@ -81,10 +81,16 @@ def run_turn(
         chat_fn = llm.chat
 
     for _ in range(MAX_ROUNDS):
+        if metrics is not None:
+            metrics["llm_calls"] = metrics.get("llm_calls", 0) + 1
         response = chat_fn(messages, TOOL_SCHEMAS)
         usage = response.pop("_usage", None)
         if usage and metrics is not None:
             metrics["tokens"] = metrics.get("tokens", 0) + usage.get("total_tokens", 0)
+            metrics["prompt_tokens"] = metrics.get("prompt_tokens", 0) + usage.get("prompt_tokens", 0)
+            metrics["completion_tokens"] = metrics.get("completion_tokens", 0) + usage.get("completion_tokens", 0)
+            metrics["llm_retries"] = metrics.get("llm_retries", 0) + usage.get("retries", 0)
+            metrics["rate_limit_wait_s"] = metrics.get("rate_limit_wait_s", 0.0) + usage.get("rate_limit_wait_s", 0.0)
 
         messages.append(response)
 

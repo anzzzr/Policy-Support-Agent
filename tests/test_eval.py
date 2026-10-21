@@ -1136,6 +1136,32 @@ class TestResultsMarkdownReport:
         report = format_results_markdown([row])
         assert report.startswith("# SMOKE RUN - NOT A RESULT")
 
+    def test_per_run_metrics_fields_recorded(self, db):
+        from eval.run_eval import evaluate_run
+
+        scenario = {"id": "scenario_01", "expected_db": {"orders": []}}
+        res = evaluate_run(
+            db,
+            scenario,
+            trace=[],
+            latency_sec=25.0,
+            latency_without_rate_limit_sec=10.0,
+            tokens=300,
+            prompt_tokens=250,
+            completion_tokens=50,
+            llm_calls=2,
+            llm_retries=1,
+            rate_limit_wait_s=15.0,
+        )
+        assert res.llm_calls == 2
+        assert res.llm_retries == 1
+        assert res.rate_limit_wait_s == 15.0
+        assert res.prompt_tokens == 250
+        assert res.completion_tokens == 50
+        assert res.latency_sec == 25.0
+        assert res.latency_without_rate_limit_sec == 10.0
+
+
 
 
 
