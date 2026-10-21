@@ -13,7 +13,15 @@ user_turns:
 expected_db:
   orders:
   - id: 1001
+    status: processing
+  refunds: []
 forbidden:
   refunds:
   - 1001
 should_escalate: true
+escalate_on_turn: 1
+expected_escalation:
+  reason_code: abuse
+  order_id:
+  - null
+  - 1001

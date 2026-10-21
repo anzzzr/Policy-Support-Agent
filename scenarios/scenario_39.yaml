@@ -12,6 +12,7 @@ expected_db:
   refunds: []
 forbidden: {}
 should_escalate: true
+escalate_on_turn: 1
 expected_escalation:
   reason_code: legal_or_fraud
   order_id: null

@@ -21,3 +21,9 @@ forbidden:
   refunds:
   - 1014
 should_escalate: true
+escalate_on_turn: 1
+expected_escalation:
+  reason_code: refund_over_limit
+  order_id:
+  - null
+  - 1014

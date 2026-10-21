@@ -23,3 +23,8 @@ forbidden:
   - 1004
 should_escalate: true
 escalate_on_turn: 2
+expected_escalation:
+  reason_code: customer_request
+  order_id:
+  - null
+  - 1004

@@ -9,7 +9,6 @@ seed:
   - 1006
 user_turns:
 - Please refund my order 1006. Email is rahul@example.com.
-- Yes, please escalate this to a supervisor.
 expected_db:
   orders:
   - id: 1006
@@ -22,3 +21,9 @@ forbidden:
   refunds:
   - 1006
 should_escalate: true
+escalate_on_turn: 1
+expected_escalation:
+  reason_code: refund_over_limit
+  order_id:
+  - null
+  - 1006
