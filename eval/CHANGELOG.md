@@ -44,6 +44,11 @@ All modifications to evaluation scenarios and their rationales are recorded here
   - **Description:** Customer requests partial refund (₹500 on ₹1,500 order 1003).
   - **Expected:** `should_escalate: false` (Rule 4: full order total only; partial refund refused in text).
 
+## 2026-10-22 — Rule 9 Out-of-Scope Immediate Escalation (scenario_30) [Commit 2e22efe]
+- **`scenarios/scenario_30.yaml`** [dev]:
+  - **Change:** Kept single user turn. Added `escalate_on_turn: 1`, `expected_escalation: {reason_code: "out_of_scope", order_id: [null, 1001]}`.
+  - **Reason:** Expectation updated to match policy v2 Rule 9 (a price-match/store-credit request is an out-of-scope request that needs a decision the policy does not cover, requiring immediate escalation on turn 1).
+
 ## 2026-10-21 — Seed v1.1: Exact Boundary Orders (1026, 1027, 1028)
 - **`app/db.py`**:
   - **Orders added:**
