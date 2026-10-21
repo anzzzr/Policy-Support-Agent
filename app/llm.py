@@ -42,6 +42,7 @@ def chat(messages: list[dict], tools: list[dict]) -> dict:
     api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
     if not api_key:
         raise RuntimeError("Set GROQ_API_KEY (or LLM_API_KEY) environment variable.")
+    api_key = api_key.strip().strip('"').strip("'")
 
     base_url = os.environ.get("LLM_BASE_URL", DEFAULT_BASE_URL)
     model = os.environ.get("LLM_MODEL")

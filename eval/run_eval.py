@@ -1356,6 +1356,17 @@ def main():
                 flush=True,
             )
     except Exception as e:
+        if "AuthenticationError" in type(e).__name__ or "invalid_api_key" in str(e).lower() or "401" in str(e):
+            print(f"\n[!] Authentication error (HTTP 401): {e}")
+            print(
+                "\nExplanation: The provided GROQ_API_KEY was rejected by api.groq.com.\n"
+                "To resolve:\n"
+                "1. If you ran `GROQ_API_KEY=\"gsk_...\" ...`, replace 'gsk_...' with your real Groq API key.\n"
+                "   If GROQ_API_KEY is already exported in your environment, run without the prefix:\n"
+                "     /tmp/v2/bin/python eval/run_eval.py --smoke scenario_01 --variant B --runs 1\n"
+                "2. Verify your key is active at: https://console.groq.com/keys\n"
+            )
+            return
         if "RateLimitError" in type(e).__name__ or "rate limit" in str(e).lower():
             print(f"\n[!] API Rate limit reached: {e}")
             print(
