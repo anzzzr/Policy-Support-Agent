@@ -1,5 +1,7 @@
 # Evaluation Results
 
+> **Note:** This file was the original hand-written results placeholder before the first automated eval run.
+
 Evaluation results across 30 test scenarios (3 runs per scenario = 90 runs per variant).
 Quality is measured by the **final database state**, not conversation style.
 

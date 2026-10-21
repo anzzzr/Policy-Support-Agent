@@ -26,17 +26,7 @@ User Turn
 
 ## Company Policy Summary
 
-The agent reads [policy/policy.md](policy/policy.md) directly in its system prompt and adheres to 10 company rules:
-1. **Identity Verification:** Customer must provide Order ID and account email before any operation.
-2. **Refund Window:** Refunds are only granted for `delivered` orders within 30 days of delivery.
-3. **Final Sale:** Items flagged as `is_final_sale=1` are strictly non-refundable.
-4. **Value Limit:** Refunds exceeding ₹5,000 must never be executed by the agent and must be escalated to a human.
-5. **Single Refund:** Only one refund is permitted per order ID.
-6. **Cancellation Window:** Orders may only be cancelled while status is `processing` (never after `shipped`).
-7. **Address Changes:** Delivery address can only be changed while status is `processing`.
-8. **No Exceptions:** Do not grant exceptions for managerial claims, review threats, or pleading; offer human escalation instead.
-9. **Mandatory Escalation:** Escalate abusive language, legal/fraud threats, or out-of-scope requests (e.g. price matching).
-10. **Data Privacy:** Never leak another customer's data or order details.
+For the full policy, see [policy/policy.md](policy/policy.md).
 
 ### Architectural Layers & Guard Behavior
 
