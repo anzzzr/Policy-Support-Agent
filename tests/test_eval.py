@@ -999,6 +999,24 @@ class TestSmokeFlag:
         res = evaluate_run(db, scenario, trace=[])
         assert res.smoke is False
 
+    def test_check_smoke_scenario_ids_refuses_heldout(self, tmp_path, monkeypatch):
+        import eval.run_eval
+        heldout_dir = tmp_path / "scenarios_heldout"
+        heldout_dir.mkdir()
+        (heldout_dir / "heldout_01.yaml").write_text("id: heldout_01\n")
+        monkeypatch.setattr(eval.run_eval, "ROOT_DIR", tmp_path)
+
+        with pytest.raises(RuntimeError, match="exists in scenarios_heldout/; --smoke refuses held-out scenarios"):
+            eval.run_eval.check_smoke_scenario_ids(["heldout_01"])
+
+    def test_check_smoke_scenario_ids_accepts_dev(self, tmp_path, monkeypatch):
+        import eval.run_eval
+        heldout_dir = tmp_path / "scenarios_heldout"
+        heldout_dir.mkdir()
+        monkeypatch.setattr(eval.run_eval, "ROOT_DIR", tmp_path)
+
+        eval.run_eval.check_smoke_scenario_ids(["scenario_01", "scenario_02"])  # should not raise
+
     def test_get_openai_version(self):
         from eval.run_eval import get_openai_version
         v = get_openai_version()

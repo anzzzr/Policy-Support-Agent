@@ -1009,6 +1009,17 @@ def verify_tag_gating(is_heldout: bool) -> None:
             )
 
 
+def check_smoke_scenario_ids(scenario_ids: list[str]) -> None:
+    """Refuse any scenario ID that exists in scenarios_heldout/ without reading that directory."""
+    heldout_dir = ROOT_DIR / "scenarios_heldout"
+    for sc_id in scenario_ids:
+        # Check specific path existence via stat without reading directory contents or file contents
+        if (heldout_dir / f"{sc_id}.yaml").is_file() or (heldout_dir / sc_id).is_file():
+            raise RuntimeError(
+                f"Scenario '{sc_id}' exists in scenarios_heldout/; --smoke refuses held-out scenarios."
+            )
+
+
 # ── Main runner ───────────────────────────────────────────────────────
 
 def main():
@@ -1084,6 +1095,16 @@ def main():
         except RuntimeError as err:
             print(f"\n[ERROR] Tag gating failure: {err}\n")
             sys.exit(1)
+    else:
+        if cli_args.heldout:
+            print("\n[ERROR] --smoke cannot be combined with --heldout.\n")
+            sys.exit(1)
+        if len(cli_args.smoke) > 0:
+            try:
+                check_smoke_scenario_ids(cli_args.smoke)
+            except RuntimeError as err:
+                print(f"\n[ERROR] {err}\n")
+                sys.exit(1)
 
     raw_run_id = cli_args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
     run_id = f"smoke_{raw_run_id}" if cli_args.smoke is not None else raw_run_id
@@ -1096,8 +1117,8 @@ def main():
     run_results_md = run_dir / ("RESULTS_HELDOUT.md" if cli_args.heldout else "RESULTS.md")
 
     api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
-    target_dir = ROOT_DIR / "scenarios_heldout" if cli_args.heldout else SCENARIOS_DIR
-    if cli_args.heldout and not target_dir.exists():
+    target_dir = SCENARIOS_DIR if cli_args.smoke is not None else (ROOT_DIR / "scenarios_heldout" if cli_args.heldout else SCENARIOS_DIR)
+    if cli_args.heldout and cli_args.smoke is None and not target_dir.exists():
         print(f"\n[ERROR] Held-out scenarios directory not found: {target_dir}\n")
         sys.exit(1)
 
