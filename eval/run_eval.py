@@ -55,6 +55,7 @@ class RunResult:
     tool_arg_errors: int = 0
     pip_freeze_sha256: str = ""
     smoke: bool = False
+    openai_version: str = ""
     category: str = ""
     group: str = "dev"
     eval_today: str = EVAL_TODAY
@@ -793,6 +794,15 @@ def get_pip_freeze_sha256() -> str:
         return ""
 
 
+def get_openai_version() -> str:
+    """Return the installed version of the openai package."""
+    try:
+        import openai
+        return getattr(openai, "__version__", "unknown")
+    except Exception:
+        return "unknown"
+
+
 def get_git_info() -> tuple[str, bool]:
     """Retrieve current commit hash and whether the working tree is dirty."""
     try:
@@ -1031,6 +1041,7 @@ def main():
     checkpoint_file = run_dir / "checkpoint.json"
     current_fingerprint = get_run_fingerprint(git_commit)
     pip_freeze_hash = get_pip_freeze_sha256()
+    openai_version = get_openai_version()
 
     if not api_key:
         print(
@@ -1193,6 +1204,8 @@ def main():
                         "scenarios_sha256": harness_hashes["scenarios_sha256"],
                         "heldout_sha256": harness_hashes["heldout_sha256"],
                         "pip_freeze_sha256": pip_freeze_hash,
+                        "openai_version": openai_version,
+                        "openai_client_version": openai_version,
                         "model": current_fingerprint["model"],
                         "temperature": current_fingerprint["temperature"],
                         "max_rounds": current_fingerprint["max_rounds"],

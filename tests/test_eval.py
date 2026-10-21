@@ -992,6 +992,14 @@ class TestSmokeFlag:
         res = evaluate_run(db, scenario, trace=[])
         assert res.smoke is False
 
+    def test_get_openai_version(self):
+        from eval.run_eval import get_openai_version
+        v = get_openai_version()
+        assert isinstance(v, str)
+        assert len(v) > 0
+        assert v != "unknown"
+
+
 
 
 

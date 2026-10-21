@@ -59,7 +59,7 @@ Clone the repository and run all 83 offline tests (completes in < 0.1s without n
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 
 # Run all unit tests
 make test
