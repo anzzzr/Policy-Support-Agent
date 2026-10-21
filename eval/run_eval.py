@@ -566,6 +566,119 @@ def compute_dir_sha256(directory: Path, glob_pattern: str = "*.yaml") -> str:
     return hasher.hexdigest()
 
 
+def compute_seed_dump_sha256() -> str:
+    """Compute deterministic SHA-256 hash of table dumps in a freshly-seeded database."""
+    from app.db import get_connection
+    conn = get_connection()
+    try:
+        hasher = hashlib.sha256()
+        tables = ["customers", "orders", "refunds", "escalations"]
+        for table in tables:
+            hasher.update(f"TABLE:{table}\n".encode("utf-8"))
+            cursor = conn.execute(f"SELECT * FROM {table} ORDER BY id")
+            cols = [d[0] for d in cursor.description]
+            for row in cursor.fetchall():
+                row_str = "|".join(f"{col}:{row[col]}" for col in cols)
+                hasher.update(f"{row_str}\n".encode("utf-8"))
+        return hasher.hexdigest()
+    finally:
+        conn.close()
+
+
+def get_run_fingerprint(
+    git_commit: str,
+    model: str | None = None,
+    temperature: float | None = None,
+    eval_today: str | None = None,
+    max_rounds: int | None = None,
+) -> dict[str, Any]:
+    """Return the configuration fingerprint for reproducible evaluation runs."""
+    from app.agent import MAX_ROUNDS
+    from app.llm import DEFAULT_MODEL
+
+    policy_path = ROOT_DIR / "policy" / "policy.md"
+    policy_sha256 = (
+        hashlib.sha256(policy_path.read_bytes()).hexdigest()
+        if policy_path.exists()
+        else "none"
+    )
+    seed_dump_sha256 = compute_seed_dump_sha256()
+    scenarios_sha256 = compute_dir_sha256(SCENARIOS_DIR, "*.yaml")
+
+    effective_model = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
+    effective_temp = (
+        temperature
+        if temperature is not None
+        else float(os.environ.get("LLM_TEMPERATURE", "0.0"))
+    )
+    effective_eval_today = eval_today or os.environ.get("EVAL_TODAY", EVAL_TODAY)
+    effective_max_rounds = (
+        max_rounds
+        if max_rounds is not None
+        else int(os.environ.get("MAX_ROUNDS", str(MAX_ROUNDS)))
+    )
+
+    return {
+        "policy_sha256": policy_sha256,
+        "seed_dump_sha256": seed_dump_sha256,
+        "scenarios_sha256": scenarios_sha256,
+        "git_commit": git_commit,
+        "model": effective_model,
+        "temperature": effective_temp,
+        "EVAL_TODAY": effective_eval_today,
+        "max_rounds": effective_max_rounds,
+    }
+
+
+def load_and_verify_checkpoint(
+    checkpoint_file: Path,
+    current_fingerprint: dict[str, Any],
+) -> dict[str, Any]:
+    """Load a checkpoint and refuse to resume if the configuration fingerprint differs."""
+    if not checkpoint_file.exists():
+        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_file}")
+
+    data = json.loads(checkpoint_file.read_text())
+    stored_fp = data.get("fingerprint", {})
+    mismatches = []
+    for key in [
+        "policy_sha256",
+        "seed_dump_sha256",
+        "scenarios_sha256",
+        "git_commit",
+        "model",
+        "temperature",
+        "EVAL_TODAY",
+        "max_rounds",
+    ]:
+        if stored_fp.get(key) != current_fingerprint.get(key):
+            mismatches.append(
+                f"{key} (checkpoint had '{stored_fp.get(key)}', current is '{current_fingerprint.get(key)}')"
+            )
+
+    if mismatches:
+        raise RuntimeError(
+            "Checkpoint fingerprint mismatch: refusing to resume run with different configuration:\n"
+            + "\n".join(f"  - {m}" for m in mismatches)
+        )
+
+    return data
+
+
+def save_checkpoint(
+    checkpoint_file: Path,
+    fingerprint: dict[str, Any],
+    completed_runs: list[dict[str, Any]],
+) -> None:
+    """Save evaluation checkpoint and progress atomically."""
+    data = {
+        "fingerprint": fingerprint,
+        "updated_at": datetime.now().isoformat(),
+        "completed_runs": completed_runs,
+    }
+    checkpoint_file.write_text(json.dumps(data, indent=2))
+
+
 def get_harness_hashes() -> dict[str, str]:
     """Compute current SHA-256 hashes for policy, seed, scenarios, and heldout files."""
     policy_path = ROOT_DIR / "policy" / "policy.md"
@@ -661,6 +774,11 @@ def main():
         default=None,
         help="Run identifier / directory name in eval/runs/ (default: timestamp)",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume an evaluation run from checkpoint.json in run directory",
+    )
     cli_args = parser.parse_args()
 
     git_commit, is_dirty = get_git_info()
@@ -685,6 +803,9 @@ def main():
         scenarios = scenarios[:cli_args.limit]
     print(f"Loaded {len(scenarios)} scenarios from {SCENARIOS_DIR}.")
 
+    checkpoint_file = run_dir / "checkpoint.json"
+    current_fingerprint = get_run_fingerprint(git_commit)
+
     if not api_key:
         print(
             "\n[!] Notice: LLM_API_KEY / GROQ_API_KEY is not set.\n"
@@ -693,6 +814,7 @@ def main():
             "        export LLM_MODEL='llama-3.3-70b-versatile'   # default\n"
             "        make eval\n"
         )
+        save_checkpoint(checkpoint_file, current_fingerprint, [])
         # Write placeholder RESULTS.md
         placeholder_md = (
             "# Evaluation Results\n\n"
@@ -760,8 +882,26 @@ def main():
     variant_metrics: dict[str, dict[str, Any]] = {}
     jsonl_entries = []
 
-    # Initialize results.jsonl in run directory for fresh run
-    run_results_jsonl.write_text("")
+    completed_runs_set: set[tuple[str, str, int]] = set()
+    checkpoint_data: dict[str, Any]
+
+    if cli_args.resume:
+        try:
+            checkpoint_data = load_and_verify_checkpoint(checkpoint_file, current_fingerprint)
+        except Exception as e:
+            print(f"\n[ERROR] {e}\n")
+            sys.exit(1)
+        for c in checkpoint_data.get("completed_runs", []):
+            completed_runs_set.add((c["variant"], c["scenario_id"], c["run_num"]))
+        print(f"Resuming run '{run_id}': skipping {len(completed_runs_set)} completed runs.")
+    else:
+        checkpoint_data = {
+            "fingerprint": current_fingerprint,
+            "created_at": datetime.now().isoformat(),
+            "completed_runs": [],
+        }
+        save_checkpoint(checkpoint_file, current_fingerprint, [])
+        run_results_jsonl.write_text("")
 
     try:
         for v in variants:
@@ -772,6 +912,13 @@ def main():
             for idx, sc in enumerate(scenarios, 1):
                 sc_id = sc.get("id", f"scenario_{idx:02d}")
                 for run_i in range(1, cli_args.runs + 1):
+                    if (v["id"], sc_id, run_i) in completed_runs_set:
+                        print(
+                            f"  [{v['id']}] [{idx:02d}/{len(scenarios)}] {sc_id} (run {run_i}/{cli_args.runs})... SKIPPED (checkpoint)",
+                            flush=True,
+                        )
+                        continue
+
                     print(
                         f"  [{v['id']}] [{idx:02d}/{len(scenarios)}] {sc_id} (run {run_i}/{cli_args.runs})... ",
                         end="",
@@ -821,6 +968,20 @@ def main():
                     jsonl_entries.append(entry)
                     with open(run_results_jsonl, "a") as fp:
                         fp.write(json.dumps(entry) + "\n")
+
+                    checkpoint_data.setdefault("completed_runs", []).append(
+                        {
+                            "variant": res.variant,
+                            "scenario_id": res.scenario_id,
+                            "run_num": res.run_num,
+                            "success": res.success,
+                        }
+                    )
+                    save_checkpoint(
+                        checkpoint_file,
+                        current_fingerprint,
+                        checkpoint_data["completed_runs"],
+                    )
 
                     # Brief 0.5s pause to avoid slamming Groq token-per-minute rate limit
                     time.sleep(0.5)

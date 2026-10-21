@@ -622,4 +622,66 @@ class TestHarnessGitHygiene:
             assert len(hashes[k]) == 64 or hashes[k] == "none"
 
 
+class TestCheckpointResume:
+    def test_fingerprint_contains_all_required_keys(self):
+        from eval.run_eval import get_run_fingerprint
+        fp = get_run_fingerprint("abc1234")
+        expected_keys = {
+            "policy_sha256",
+            "seed_dump_sha256",
+            "scenarios_sha256",
+            "git_commit",
+            "model",
+            "temperature",
+            "EVAL_TODAY",
+            "max_rounds",
+        }
+        assert set(fp.keys()) == expected_keys
+        assert fp["git_commit"] == "abc1234"
+        assert len(fp["policy_sha256"]) == 64
+        assert len(fp["seed_dump_sha256"]) == 64
+        assert len(fp["scenarios_sha256"]) == 64
+        assert fp["EVAL_TODAY"] == "2026-10-21"
+
+    def test_load_and_verify_checkpoint_success(self, tmp_path):
+        from eval.run_eval import get_run_fingerprint, load_and_verify_checkpoint, save_checkpoint
+        fp = get_run_fingerprint("commit_hash_1")
+        cp_file = tmp_path / "checkpoint.json"
+        save_checkpoint(cp_file, fp, [{"variant": "B", "scenario_id": "scenario_01", "run_num": 1}])
+
+        loaded = load_and_verify_checkpoint(cp_file, fp)
+        assert loaded["fingerprint"] == fp
+        assert len(loaded["completed_runs"]) == 1
+
+    def test_load_and_verify_checkpoint_refuses_on_mismatch(self, tmp_path):
+        from eval.run_eval import get_run_fingerprint, load_and_verify_checkpoint, save_checkpoint
+        base_fp = get_run_fingerprint("commit_hash_1")
+        cp_file = tmp_path / "checkpoint.json"
+        save_checkpoint(cp_file, base_fp, [])
+
+        keys_to_test = [
+            ("policy_sha256", "different_policy_hash"),
+            ("seed_dump_sha256", "different_seed_hash"),
+            ("scenarios_sha256", "different_scenarios_hash"),
+            ("git_commit", "different_commit"),
+            ("model", "different-model-name"),
+            ("temperature", 0.7),
+            ("EVAL_TODAY", "2026-10-25"),
+            ("max_rounds", 15),
+        ]
+
+        for key, altered_val in keys_to_test:
+            altered_fp = dict(base_fp)
+            altered_fp[key] = altered_val
+            with pytest.raises(RuntimeError, match="fingerprint mismatch"):
+                load_and_verify_checkpoint(cp_file, altered_fp)
+
+    def test_load_and_verify_checkpoint_missing_file(self, tmp_path):
+        from eval.run_eval import get_run_fingerprint, load_and_verify_checkpoint
+        fp = get_run_fingerprint("commit_hash_1")
+        missing_file = tmp_path / "nonexistent_checkpoint.json"
+        with pytest.raises(FileNotFoundError):
+            load_and_verify_checkpoint(missing_file, fp)
+
+
 
