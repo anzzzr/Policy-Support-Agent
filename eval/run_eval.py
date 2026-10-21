@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -564,6 +565,12 @@ def main():
         action="store_true",
         help="Allow running evaluation on a dirty git working tree",
     )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        default=None,
+        help="Run identifier / directory name in eval/runs/ (default: timestamp)",
+    )
     cli_args = parser.parse_args()
 
     git_commit, is_dirty = get_git_info()
@@ -574,6 +581,13 @@ def main():
             "        or pass --allow-dirty to override.\n"
         )
         sys.exit(1)
+
+    run_id = cli_args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    runs_dir = EVAL_DIR / "runs"
+    run_dir = runs_dir / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run_results_jsonl = run_dir / "results.jsonl"
+    run_results_md = run_dir / "RESULTS.md"
 
     api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
     scenarios = load_all_scenarios()
@@ -609,9 +623,20 @@ def main():
             "## Most Frequent Scenario Failures\n\n"
             "_Pending evaluation run._\n"
         )
-        EVAL_DIR.mkdir(exist_ok=True)
-        RESULTS_MD.write_text(placeholder_md)
-        print(f"Wrote placeholder report to {RESULTS_MD}.")
+        run_results_md.write_text(placeholder_md)
+        print(f"Wrote placeholder report to {run_results_md}.")
+        latest_path = runs_dir / "latest"
+        try:
+            if latest_path.is_symlink() or latest_path.exists():
+                if latest_path.is_dir() and not latest_path.is_symlink():
+                    import shutil
+                    shutil.rmtree(latest_path)
+                else:
+                    latest_path.unlink()
+            latest_path.symlink_to(run_dir.resolve(), target_is_directory=True)
+        except Exception:
+            import shutil
+            shutil.copytree(run_dir, latest_path, dirs_exist_ok=True)
         return
 
     # Variants definition
@@ -645,8 +670,8 @@ def main():
     variant_metrics: dict[str, dict[str, Any]] = {}
     jsonl_entries = []
 
-    # Reset results.jsonl for fresh run
-    RESULTS_JSONL.write_text("")
+    # Initialize results.jsonl in run directory for fresh run
+    run_results_jsonl.write_text("")
 
     try:
         for v in variants:
@@ -702,7 +727,7 @@ def main():
                         "dirty": is_dirty,
                     }
                     jsonl_entries.append(entry)
-                    with open(RESULTS_JSONL, "a") as fp:
+                    with open(run_results_jsonl, "a") as fp:
                         fp.write(json.dumps(entry) + "\n")
 
                     # Brief 0.5s pause to avoid slamming Groq token-per-minute rate limit
@@ -757,17 +782,31 @@ def main():
             "reason": most_common_reason,
         })
 
-    # Write RESULTS.md
+    # Write RESULTS.md into run directory
     report_md = format_results_markdown(variant_metrics, frequent_failures)
-    EVAL_DIR.mkdir(exist_ok=True)
-    RESULTS_MD.write_text(report_md)
-    print(f"\nWrote full evaluation report to {RESULTS_MD}")
+    run_results_md.write_text(report_md)
+    print(f"\nWrote full evaluation report to {run_results_md}")
 
-    # Write raw results.jsonl
-    with open(RESULTS_JSONL, "w") as fp:
+    # Write complete run records
+    with open(run_results_jsonl, "w") as fp:
         for entry in jsonl_entries:
             fp.write(json.dumps(entry) + "\n")
-    print(f"Wrote {len(jsonl_entries)} raw run records to {RESULTS_JSONL}")
+    print(f"Wrote {len(jsonl_entries)} raw run records to {run_results_jsonl}")
+
+    # Update latest symlink / directory in eval/runs/
+    latest_path = runs_dir / "latest"
+    try:
+        if latest_path.is_symlink() or latest_path.exists():
+            if latest_path.is_dir() and not latest_path.is_symlink():
+                import shutil
+                shutil.rmtree(latest_path)
+            else:
+                latest_path.unlink()
+        latest_path.symlink_to(run_dir.resolve(), target_is_directory=True)
+    except Exception:
+        import shutil
+        shutil.copytree(run_dir, latest_path, dirs_exist_ok=True)
+
 
 
 if __name__ == "__main__":
