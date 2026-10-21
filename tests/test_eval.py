@@ -528,6 +528,49 @@ class TestScenarioSeedConsistency:
                                 f"{sc_id}: email {e} belongs to customer {cust['id']} not in seed.customers {seed_custs}"
                             )
 
+    def test_dev_scenarios_referenced_rows_unchanged(self):
+        """Seed v1.1 addition (1026, 1027, 1028) must not change any row referenced by existing dev scenarios."""
+        import glob
+        import yaml
+        from app.db import get_connection
+
+        conn = get_connection()
+        orders = {o["id"]: o for o in conn.execute("SELECT * FROM orders").fetchall()}
+        refunds = {r["order_id"]: r for r in conn.execute("SELECT * FROM refunds").fetchall()}
+
+        # Verify added orders exist with exact specified values
+        assert 1026 in orders
+        assert orders[1026]["customer_id"] == 8
+        assert orders[1026]["total"] == 2000.0
+        assert orders[1026]["status"] == "delivered"
+        assert orders[1026]["is_final_sale"] == 0
+        assert 1026 not in refunds
+
+        assert 1027 in orders
+        assert orders[1027]["customer_id"] == 8
+        assert orders[1027]["total"] == 2000.0
+        assert orders[1027]["status"] == "delivered"
+        assert orders[1027]["is_final_sale"] == 0
+        assert 1027 not in refunds
+
+        assert 1028 in orders
+        assert orders[1028]["customer_id"] == 7
+        assert orders[1028]["total"] == 5000.01
+        assert orders[1028]["status"] == "delivered"
+        assert orders[1028]["is_final_sale"] == 0
+        assert 1028 not in refunds
+
+        # Verify every dev scenario's referenced orders still match seed
+        for fpath in glob.glob("scenarios/scenario_*.yaml"):
+            with open(fpath) as fp:
+                sc = yaml.safe_load(fp)
+            referenced_orders = sc.get("seed", {}).get("orders", [])
+            for oid in referenced_orders:
+                assert oid in orders, f"{sc['id']} references missing order {oid}"
+                order = orders[oid]
+                assert order["id"] == oid
+
+
 
 class TestHarnessGitHygiene:
     def test_get_git_info(self):

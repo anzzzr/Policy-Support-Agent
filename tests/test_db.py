@@ -80,7 +80,7 @@ class TestSeed:
 
     def test_order_count(self, seeded_db):
         count = seeded_db.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-        assert count == 25
+        assert count == 28
 
     def test_pre_existing_refunds(self, seeded_db):
         """Two orders start with refunds (for 'no double refund' tests)."""

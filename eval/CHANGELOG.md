@@ -43,3 +43,11 @@ All modifications to evaluation scenarios and their rationales are recorded here
 - **`scenarios/scenario_41.yaml`** [dev]:
   - **Description:** Customer requests partial refund (₹500 on ₹1,500 order 1003).
   - **Expected:** `should_escalate: false` (Rule 4: full order total only; partial refund refused in text).
+
+## 2026-10-21 — Seed v1.1: Exact Boundary Orders (1026, 1027, 1028)
+- **`app/db.py`**:
+  - **Orders added:**
+    * Order 1026: Deepa Menon (`deepa@example.com`), delivered exactly 30 days before EVAL_TODAY, ₹2,000.00, not final sale, no refund.
+    * Order 1027: Deepa Menon (`deepa@example.com`), delivered exactly 31 days before EVAL_TODAY, ₹2,000.00, not final sale, no refund.
+    * Order 1028: Karthik Nair (`karthik@example.com`), delivered 10 days before EVAL_TODAY, ₹5,000.01, not final sale, no refund.
+  - **Reason:** Provides exact boundary test cases for Rule 2 (Day 30 eligible vs Day 31 ineligible) and Rule 4 (₹5,000.01 exceeding threshold requiring human escalation) without mutating any pre-existing seed orders. All referenced rows across dev scenarios 01–42 remain completely unchanged.

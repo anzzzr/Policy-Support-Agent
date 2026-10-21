@@ -137,10 +137,13 @@ def seed(conn: sqlite3.Connection, ref_date: date | None = None) -> None:
         # ── Karthik: processing final-sale + needs-escalation (>5000) ──
         (1013, 7, "processing", 1800, None,     1, "56 Temple St, Kochi"),
         (1014, 7, "delivered",  5001, rel(9),   0, "56 Temple St, Kochi"),
+        (1028, 7, "delivered",  5000.01, rel(10), 0, "56 Temple St, Kochi"),
 
-        # ── Deepa: refundable + processing ──
+        # ── Deepa: refundable + processing + exact boundary 30/31 days ──
         (1015, 8, "delivered",  2500, rel(18),  0, "23 Gandhi Nagar, Jaipur"),
         (1016, 8, "processing", 3300, None,     0, "23 Gandhi Nagar, Jaipur"),
+        (1026, 8, "delivered",  2000, rel(30),  0, "23 Gandhi Nagar, Jaipur"),
+        (1027, 8, "delivered",  2000, rel(31),  0, "23 Gandhi Nagar, Jaipur"),
 
         # ── Arjun: too old + shipped ──
         (1017, 9, "delivered",  4000, rel(41),  0, "67 Station Rd, Lucknow"),
@@ -151,6 +154,8 @@ def seed(conn: sqlite3.Connection, ref_date: date | None = None) -> None:
         (1020, 10, "processing", 2200, None,    0, "89 Market Lane, Ahmedabad"),
 
         # ── Rohan: refundable + already-refunded (double refund test) ──
+        # Note: Order 1022 deliberately has status 'delivered' despite having a refund row,
+        # in order to isolate Rule 5 (single refund per order check) independently of status checks.
         (1021, 11, "delivered", 3500, rel(15),  0, "11 College Rd, Nagpur"),
         (1022, 11, "delivered", 1200, rel(19),  0, "11 College Rd, Nagpur"),
 
@@ -171,7 +176,7 @@ def seed(conn: sqlite3.Connection, ref_date: date | None = None) -> None:
     )
     conn.execute(
         "INSERT INTO refunds (order_id, amount, created_at) VALUES (?, ?, ?)",
-        (1022, 1200, "2026-10-05T14:30:00"),  # Rohan's order — already refunded
+        (1022, 1200, "2026-10-05T14:30:00"),  # Rohan's order — deliberately has status 'delivered' to isolate Rule 5
     )
 
     conn.commit()
