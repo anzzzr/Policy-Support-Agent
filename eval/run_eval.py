@@ -76,6 +76,7 @@ def evaluate_run(
     latency_sec: float = 0.0,
     tokens: int = 0,
     initial_snapshot: dict[str, list[dict]] | None = None,
+    messages: list[dict] | None = None,
 ) -> RunResult:
     """Compare final database state against expected_db and forbidden rules.
 
@@ -214,6 +215,49 @@ def evaluate_run(
                     failure_reasons.append(
                         f"Forbidden state reached: order {oid} has {k}='{forb_v}'"
                     )
+
+    # 4b. Check forbidden reply terms and regex against all assistant messages
+    assistant_texts = []
+    if messages:
+        for m in messages:
+            if isinstance(m, dict) and m.get("role") == "assistant":
+                content = m.get("content")
+                if content:
+                    assistant_texts.append(str(content))
+
+    reply_terms = []
+    if scenario.get("forbidden_reply_terms"):
+        reply_terms.extend(scenario["forbidden_reply_terms"])
+    if forbidden.get("reply_terms"):
+        reply_terms.extend(forbidden["reply_terms"])
+
+    reply_regexes = []
+    if scenario.get("forbidden_reply_regex"):
+        reply_regexes.extend(scenario["forbidden_reply_regex"])
+    if forbidden.get("reply_regex"):
+        reply_regexes.extend(forbidden["reply_regex"])
+
+    for text in assistant_texts:
+        text_lower = text.lower()
+        for term in reply_terms:
+            if str(term).lower() in text_lower:
+                forbidden_triggered = True
+                failure_reasons.append(
+                    f"Forbidden reply term '{term}' appeared in assistant reply"
+                )
+
+        for pat in reply_regexes:
+            try:
+                if re.search(pat, text, re.IGNORECASE):
+                    forbidden_triggered = True
+                    failure_reasons.append(
+                        f"Forbidden reply regex pattern '{pat}' matched assistant reply"
+                    )
+            except re.error as e:
+                forbidden_triggered = True
+                failure_reasons.append(
+                    f"Invalid forbidden reply regex '{pat}': {e}"
+                )
 
     # 5. Check escalations
     init_esc_ids = {e["id"] for e in initial_snapshot.get("escalations", [])}
@@ -449,6 +493,7 @@ def run_single_scenario(
         latency_sec=duration,
         tokens=metrics.get("tokens", 0),
         initial_snapshot=initial_snapshot,
+        messages=messages,
     )
     conn.close()
     return result, trace
@@ -707,9 +752,9 @@ def get_harness_hashes() -> dict[str, str]:
 
     scenarios_sha256 = compute_dir_sha256(SCENARIOS_DIR, "*.yaml")
 
-    heldout_dir = ROOT_DIR / "heldout"
+    heldout_dir = ROOT_DIR / "scenarios_heldout"
     if not heldout_dir.exists():
-        heldout_dir = ROOT_DIR / "scenarios" / "heldout"
+        heldout_dir = ROOT_DIR / "heldout"
     heldout_sha256 = compute_dir_sha256(heldout_dir, "*.yaml")
 
     return {
@@ -789,6 +834,11 @@ def main():
         action="store_true",
         help="Resume an evaluation run from checkpoint.json in run directory",
     )
+    parser.add_argument(
+        "--heldout",
+        action="store_true",
+        help="Evaluate held-out scenarios (scenarios_heldout/) instead of dev scenarios",
+    )
     cli_args = parser.parse_args()
 
     git_commit, is_dirty = get_git_info()
@@ -808,10 +858,16 @@ def main():
     run_results_md = run_dir / "RESULTS.md"
 
     api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
-    scenarios = load_all_scenarios()
+    target_dir = ROOT_DIR / "scenarios_heldout" if cli_args.heldout else SCENARIOS_DIR
+    if cli_args.heldout and not target_dir.exists():
+        print(f"\n[ERROR] Held-out scenarios directory not found: {target_dir}\n")
+        sys.exit(1)
+
+    scenarios = load_all_scenarios(target_dir)
     if cli_args.limit:
         scenarios = scenarios[:cli_args.limit]
-    print(f"Loaded {len(scenarios)} scenarios from {SCENARIOS_DIR}.")
+    set_name = "held-out" if cli_args.heldout else "dev"
+    print(f"Loaded {len(scenarios)} {set_name} scenarios from {target_dir}.")
 
     checkpoint_file = run_dir / "checkpoint.json"
     current_fingerprint = get_run_fingerprint(git_commit)

@@ -6,6 +6,7 @@ valid database entities in the seed database.
 Checks both 'scenarios/' and 'scenarios_heldout/' without leaking held-out content.
 """
 
+import re
 import sys
 from pathlib import Path
 import yaml
@@ -89,6 +90,27 @@ def validate_scenario_file(
                 errors.append(
                     f"Referenced order {oid} in 'seed.orders' does not exist in seed."
                 )
+
+    # Forbidden reply terms
+    forb_terms = data.get("forbidden_reply_terms")
+    if forb_terms is not None:
+        if not isinstance(forb_terms, list) or not all(isinstance(t, str) for t in forb_terms):
+            errors.append("Field 'forbidden_reply_terms' must be a list of strings.")
+
+    # Forbidden reply regex
+    forb_regex = data.get("forbidden_reply_regex")
+    if forb_regex is not None:
+        if not isinstance(forb_regex, list):
+            errors.append("Field 'forbidden_reply_regex' must be a list of regex strings.")
+        else:
+            for pat in forb_regex:
+                if not isinstance(pat, str):
+                    errors.append(f"Forbidden reply regex pattern '{pat}' must be a string.")
+                else:
+                    try:
+                        re.compile(pat)
+                    except re.error as e:
+                        errors.append(f"Invalid regex pattern in 'forbidden_reply_regex' '{pat}': {e}")
 
     # Expected escalation order_id
     exp_esc = data.get("expected_escalation")

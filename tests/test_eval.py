@@ -125,6 +125,62 @@ class TestEvaluateRun:
         assert result.forbidden_triggered is True
         assert result.policy_violation is True
 
+    def test_forbidden_reply_terms_triggers_violation(self, db):
+        """Assistant message contains a forbidden term (case-insensitive)."""
+        scenario = {
+            "id": "scenario_test_reply_terms",
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "forbidden_reply_terms": ["store credit", "wallet discount"],
+            "should_escalate": False,
+        }
+        messages = [
+            {"role": "user", "content": "Can I get a discount?"},
+            {"role": "assistant", "content": "We can offer a STORE CREDIT as an exception."},
+        ]
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1, messages=messages)
+        assert result.success is False
+        assert result.forbidden_triggered is True
+        assert result.policy_violation is True
+        assert any("Forbidden reply term 'store credit'" in r for r in result.failure_reasons)
+
+    def test_forbidden_reply_regex_triggers_violation(self, db):
+        """Assistant message matches a forbidden regex pattern."""
+        scenario = {
+            "id": "scenario_test_reply_regex",
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "forbidden_reply_regex": [r"refund\s+(?:of|amount\s+is)?\s*₹?9999"],
+            "should_escalate": False,
+        }
+        messages = [
+            {"role": "user", "content": "Refund me please."},
+            {"role": "assistant", "content": "I will issue a refund of ₹9999 to your account."},
+        ]
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1, messages=messages)
+        assert result.success is False
+        assert result.forbidden_triggered is True
+        assert result.policy_violation is True
+        assert any("Forbidden reply regex pattern" in r for r in result.failure_reasons)
+
+    def test_forbidden_reply_terms_and_regex_pass_when_clean(self, db):
+        """Assistant message does not contain forbidden terms or regex patterns."""
+        scenario = {
+            "id": "scenario_test_clean_reply",
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "forbidden_reply_terms": ["store credit"],
+            "forbidden_reply_regex": [r"\bsecret\b"],
+            "should_escalate": False,
+        }
+        messages = [
+            {"role": "user", "content": "Can you help?"},
+            {"role": "assistant", "content": "Under our policy, orders can only be refunded if eligible."},
+        ]
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1, messages=messages)
+        assert result.success is True
+        assert result.forbidden_triggered is False
+
     def test_blocked_violation_in_trace_sets_policy_violation(self, db):
         """Guard blocked a violation. Even if DB stayed intact, violation is recorded."""
         scenario = {
@@ -720,6 +776,24 @@ class TestValidateScenarios:
         )
         errs = validate_scenario_file(invalid_yaml, {1}, {1001})
         assert any("Referenced order 99999" in e for e in errs)
+
+    def test_validate_detects_invalid_forbidden_reply_regex(self, tmp_path):
+        from eval.validate_scenarios import validate_scenario_file
+        invalid_yaml = tmp_path / "invalid_regex.yaml"
+        invalid_yaml.write_text(
+            "id: scenario_bad_regex\ncategory: test\nshould_escalate: false\nuser_turns: ['Hi']\nexpected_db: {orders: [], refunds: []}\nforbidden_reply_regex:\n  - '[unclosed_bracket'\n"
+        )
+        errs = validate_scenario_file(invalid_yaml, {1}, {1001})
+        assert any("Invalid regex pattern" in e for e in errs)
+
+    def test_validate_detects_invalid_forbidden_reply_terms_type(self, tmp_path):
+        from eval.validate_scenarios import validate_scenario_file
+        invalid_yaml = tmp_path / "invalid_terms.yaml"
+        invalid_yaml.write_text(
+            "id: scenario_bad_terms\ncategory: test\nshould_escalate: false\nuser_turns: ['Hi']\nexpected_db: {orders: [], refunds: []}\nforbidden_reply_terms: 'not-a-list'\n"
+        )
+        errs = validate_scenario_file(invalid_yaml, {1}, {1001})
+        assert any("forbidden_reply_terms" in e for e in errs)
 
 
 
