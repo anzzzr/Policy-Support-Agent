@@ -679,6 +679,21 @@ def save_checkpoint(
     checkpoint_file.write_text(json.dumps(data, indent=2))
 
 
+def derive_policy_version() -> str:
+    """Derive policy version dynamically from the policy file header."""
+    policy_path = ROOT_DIR / "policy" / "policy.md"
+    if not policy_path.exists():
+        return "unknown"
+    content = policy_path.read_text(encoding="utf-8")
+    m = re.search(r"\(v([0-9]+(?:\.[0-9]+)?)\)", content)
+    if m:
+        return f"v{m.group(1)}"
+    m = re.search(r"\bv([0-9]+(?:\.[0-9]+)?)\b", content, re.IGNORECASE)
+    if m:
+        return f"v{m.group(1)}"
+    return "v2"
+
+
 def get_harness_hashes() -> dict[str, str]:
     """Compute current SHA-256 hashes for policy, seed, scenarios, and heldout files."""
     policy_path = ROOT_DIR / "policy" / "policy.md"
@@ -688,12 +703,7 @@ def get_harness_hashes() -> dict[str, str]:
         else "none"
     )
 
-    seed_path = ROOT_DIR / "app" / "db.py"
-    seed_sha256 = (
-        hashlib.sha256(seed_path.read_bytes()).hexdigest()
-        if seed_path.exists()
-        else "none"
-    )
+    seed_sha256 = compute_seed_dump_sha256()
 
     scenarios_sha256 = compute_dir_sha256(SCENARIOS_DIR, "*.yaml")
 
@@ -957,11 +967,14 @@ def main():
                         "latency_sec": res.latency_sec,
                         "tokens": res.tokens,
                         "eval_today": res.eval_today,
-                        "policy_version": "v2",
+                        "policy_version": derive_policy_version(),
                         "policy_sha256": harness_hashes["policy_sha256"],
                         "seed_sha256": harness_hashes["seed_sha256"],
                         "scenarios_sha256": harness_hashes["scenarios_sha256"],
                         "heldout_sha256": harness_hashes["heldout_sha256"],
+                        "model": current_fingerprint["model"],
+                        "temperature": current_fingerprint["temperature"],
+                        "max_rounds": current_fingerprint["max_rounds"],
                         "git_commit": git_commit,
                         "dirty": is_dirty,
                     }

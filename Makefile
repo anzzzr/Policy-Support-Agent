@@ -14,7 +14,11 @@ eval:
 publish-results:
 	@mkdir -p eval/published
 	@if [ -d eval/runs/latest ]; then \
-		cp -r eval/runs/latest/* eval/published/; \
+		for f in results.jsonl RESULTS.md checkpoint.json config.json; do \
+			if [ -f eval/runs/latest/$$f ]; then \
+				cp eval/runs/latest/$$f eval/published/$$f; \
+			fi; \
+		done; \
 		echo "Published results from eval/runs/latest/ to eval/published/"; \
 	else \
 		echo "No eval runs found in eval/runs/latest to publish."; \
