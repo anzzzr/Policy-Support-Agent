@@ -6,6 +6,7 @@ numbers are meaningless.
 """
 
 import pytest
+from pathlib import Path
 
 from app.db import (
     get_db,
@@ -688,6 +689,37 @@ class TestCheckpointResume:
         missing_file = tmp_path / "nonexistent_checkpoint.json"
         with pytest.raises(FileNotFoundError):
             load_and_verify_checkpoint(missing_file, fp)
+
+
+class TestValidateScenarios:
+    def test_validate_all_dev_scenarios(self):
+        from eval.validate_scenarios import validate_directory
+        from app.db import get_connection
+        conn = get_connection()
+        try:
+            valid_customers = {row["id"] for row in conn.execute("SELECT id FROM customers").fetchall()}
+            valid_orders = {row["id"] for row in conn.execute("SELECT id FROM orders").fetchall()}
+        finally:
+            conn.close()
+
+        ok = validate_directory(Path("scenarios"), valid_customers, valid_orders)
+        assert ok is True
+
+    def test_validate_detects_missing_required_fields(self, tmp_path):
+        from eval.validate_scenarios import validate_scenario_file
+        invalid_yaml = tmp_path / "invalid.yaml"
+        invalid_yaml.write_text("id: scenario_bad\ncategory: test\n")
+        errs = validate_scenario_file(invalid_yaml, {1}, {1001})
+        assert any("Missing required field" in e for e in errs)
+
+    def test_validate_detects_invalid_seed_order_reference(self, tmp_path):
+        from eval.validate_scenarios import validate_scenario_file
+        invalid_yaml = tmp_path / "invalid_seed.yaml"
+        invalid_yaml.write_text(
+            "id: scenario_bad_seed\ncategory: test\nshould_escalate: false\nuser_turns: ['Hi']\nexpected_db: {orders: [], refunds: []}\nseed:\n  orders:\n  - 99999\n"
+        )
+        errs = validate_scenario_file(invalid_yaml, {1}, {1001})
+        assert any("Referenced order 99999" in e for e in errs)
 
 
 

@@ -1,4 +1,4 @@
-.PHONY: test chat eval publish-results
+.PHONY: test chat eval publish-results validate-scenarios
 
 PYTHON ?= python3
 
@@ -23,4 +23,8 @@ publish-results:
 	else \
 		echo "No eval runs found in eval/runs/latest to publish."; \
 	fi
+
+validate-scenarios:
+	PYTHONPATH=. $(PYTHON) eval/validate_scenarios.py
+
 
