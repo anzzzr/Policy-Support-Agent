@@ -859,6 +859,23 @@ class TestForbiddenEvaluation:
         assert res.forbidden_triggered is True
         assert any("Forbidden refund was issued for order 1022" in r for r in res.failure_reasons)
 
+    def test_tool_arg_errors_metric_counted_in_run_result(self, db):
+        scenario = {
+            "id": "scenario_01",
+            "seed": {"customers": [1], "orders": [1001]},
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "should_escalate": False,
+        }
+        trace = [
+            {"tool": "issue_refund", "result": {"ok": False, "error": "Unexpected argument(s) for 'issue_refund': amount"}},
+            {"tool": "cancel_order", "result": {"ok": True}},
+            {"tool": "cancel_order", "result": {"ok": False, "error": "unexpected argument: foo"}},
+        ]
+        res = evaluate_run(db, scenario, trace=trace)
+        assert res.tool_arg_errors == 2
+
+
 
 
 

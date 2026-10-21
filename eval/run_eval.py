@@ -52,6 +52,7 @@ class RunResult:
     tool_calls: int
     latency_sec: float
     tokens: int
+    tool_arg_errors: int = 0
     category: str = ""
     group: str = "dev"
     eval_today: str = EVAL_TODAY
@@ -360,6 +361,10 @@ def evaluate_run(
 
     tool_calls_count = sum(1 for t in trace if "tool" in t)
     turns_count = len(scenario.get("user_turns", []))
+    tool_arg_errors_count = sum(
+        1 for t in trace
+        if "unexpected argument" in str(t.get("result", {}).get("error", "")).lower()
+    )
 
     return RunResult(
         scenario_id=scenario_id,
@@ -377,6 +382,7 @@ def evaluate_run(
         tool_calls=tool_calls_count,
         latency_sec=latency_sec,
         tokens=tokens,
+        tool_arg_errors=tool_arg_errors_count,
         category=scenario.get("category", ""),
         group=scenario.get("group", "dev"),
         failure_reasons=failure_reasons,
@@ -1022,6 +1028,7 @@ def main():
                         "failure_reasons": res.failure_reasons,
                         "latency_sec": res.latency_sec,
                         "tokens": res.tokens,
+                        "tool_arg_errors": res.tool_arg_errors,
                         "eval_today": res.eval_today,
                         "policy_version": derive_policy_version(),
                         "policy_sha256": harness_hashes["policy_sha256"],

@@ -33,44 +33,19 @@ def conn():
 class TestGuardProbesEligibleOrder:
     """Probes against eligible delivered order 1024 (total 5000, unrefunded)."""
 
-    def test_negative_refund_amount(self, conn):
+    def test_dispatch_rejects_unexpected_arguments(self, conn):
         lookup_order(conn, 1024, "kavita@example.com")
-        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": -500.0})
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "unexpected argument" in res["error"].lower()
-        assert get_order(conn, 1024)["status"] == "delivered"
-
-    def test_zero_refund_amount(self, conn):
-        lookup_order(conn, 1024, "kavita@example.com")
-        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": 0.0})
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "unexpected argument" in res["error"].lower()
-        assert get_order(conn, 1024)["status"] == "delivered"
-
-    def test_over_total_refund_amount(self, conn):
-        lookup_order(conn, 1024, "kavita@example.com")
-        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": 6000.0})
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "unexpected argument" in res["error"].lower()
-        assert get_order(conn, 1024)["status"] == "delivered"
-
-    def test_nan_refund_amount(self, conn):
-        lookup_order(conn, 1024, "kavita@example.com")
-        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": float("nan")})
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "unexpected argument" in res["error"].lower()
-        assert get_order(conn, 1024)["status"] == "delivered"
-
-    def test_string_refund_amount(self, conn):
-        lookup_order(conn, 1024, "kavita@example.com")
-        res = dispatch(conn, "issue_refund", {"order_id": 1024, "amount": "five thousand"})
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "unexpected argument" in res["error"].lower()
+        for bad_args in [
+            {"order_id": 1024, "amount": -500.0},
+            {"order_id": 1024, "amount": 0.0},
+            {"order_id": 1024, "amount": 6000.0},
+            {"order_id": 1024, "amount": float("nan")},
+            {"order_id": 1024, "amount": "five thousand"},
+        ]:
+            res = dispatch(conn, "issue_refund", bad_args)
+            assert res["ok"] is False
+            assert res["success"] is False
+            assert "unexpected argument" in res["error"].lower(), bad_args
         assert get_order(conn, 1024)["status"] == "delivered"
 
 
