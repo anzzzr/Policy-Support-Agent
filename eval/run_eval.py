@@ -294,20 +294,17 @@ def evaluate_run(
         actual_reason = None
         actual_order_id = None
 
-        if successful_esc_calls:
+        if new_escalations:
+            esc_row = new_escalations[0]
+            actual_reason_code = esc_row.get("reason_code")
+            actual_order_id = esc_row.get("order_id")
+            actual_reason = esc_row.get("note", "")
+        elif successful_esc_calls:
             call_args = successful_esc_calls[0].get("args") or {}
             call_res = successful_esc_calls[0].get("result") or {}
             actual_reason_code = call_args.get("reason_code") or call_res.get("reason_code")
             actual_order_id = call_args.get("order_id")
-            actual_reason = call_args.get("note") or call_res.get("reason") or call_args.get("reason")
-
-        if not actual_reason_code and new_escalations:
-            row_reason = new_escalations[0].get("reason", "")
-            actual_reason = row_reason
-            actual_order_id = new_escalations[0].get("order_id")
-            m = re.match(r"^\[([a-zA-Z0-9_]+)\]", row_reason)
-            if m:
-                actual_reason_code = m.group(1)
+            actual_reason = call_args.get("note") or call_res.get("note") or call_res.get("reason")
 
         if "reason_code" in expected_escalation:
             expected_code = expected_escalation["reason_code"]

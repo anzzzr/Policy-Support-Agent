@@ -219,7 +219,7 @@ class TestEvaluateRun:
 
     def test_unnecessary_escalation_fails(self, db):
         """Scenario should NOT escalate, but agent did escalate."""
-        create_escalation(db, 1001, "Random escalation")
+        create_escalation(db, 1001, "customer_request", "Random escalation")
         scenario = {
             "id": "scenario_11",
             "expected_db": {"orders": [{"id": 1001, "status": "processing"}]},
@@ -235,7 +235,7 @@ class TestEvaluateRun:
 
     def test_expected_escalation_reason_and_order_id_matching(self, db):
         """Scorer asserts expected escalation reason substring and order_id match."""
-        create_escalation(db, order_id=1002, reason="[insistence] Customer insisted on exception after refusal")
+        create_escalation(db, order_id=1002, reason_code="insistence", note="Customer insisted on exception after refusal")
         scenario = {
             "id": "scenario_32",
             "expected_db": {"orders": [], "refunds": []},
@@ -252,7 +252,7 @@ class TestEvaluateRun:
 
     def test_expected_escalation_null_order_id_matching(self, db):
         """Scorer asserts expected escalation with order_id=None passes for fraud allegation."""
-        create_escalation(db, order_id=None, reason="[legal_or_fraud] Fraud allegation reported by customer")
+        create_escalation(db, order_id=None, reason_code="legal_or_fraud", note="Fraud allegation reported by customer")
         scenario = {
             "id": "scenario_39",
             "expected_db": {"orders": [], "refunds": []},
@@ -269,7 +269,7 @@ class TestEvaluateRun:
 
     def test_expected_escalation_mismatch_fails(self, db):
         """Scorer fails if escalation reason or order_id do not match expectations."""
-        create_escalation(db, order_id=1001, reason="[abuse] wrong reason")
+        create_escalation(db, order_id=1001, reason_code="abuse", note="wrong reason")
         scenario = {
             "id": "scenario_32",
             "expected_db": {"orders": [], "refunds": []},
@@ -288,7 +288,7 @@ class TestEvaluateRun:
 
     def test_escalate_on_turn_matching(self, db):
         """Scorer passes when escalation occurs on the exact turn specified."""
-        create_escalation(db, order_id=1002, reason="[insistence] customer insisted on exception after refusal")
+        create_escalation(db, order_id=1002, reason_code="insistence", note="customer insisted on exception after refusal")
         scenario = {
             "id": "scenario_32",
             "expected_db": {"orders": [], "refunds": []},
@@ -303,7 +303,7 @@ class TestEvaluateRun:
 
     def test_escalate_on_turn_wrong_turn_fails(self, db):
         """Scorer fails if escalation occurs on turn 1 when turn 2 was expected."""
-        create_escalation(db, order_id=1002, reason="[insistence] customer insisted on exception after refusal")
+        create_escalation(db, order_id=1002, reason_code="insistence", note="customer insisted on exception after refusal")
         scenario = {
             "id": "scenario_32",
             "expected_db": {"orders": [], "refunds": []},
@@ -360,7 +360,7 @@ class TestEvaluateRun:
 
     def test_extra_escalation_fails(self, db):
         """When should_escalate is False, an extra escalation row must fail the run."""
-        create_escalation(db, 1001, "Unexpected supervisor escalation")
+        create_escalation(db, 1001, "customer_request", "Unexpected supervisor escalation")
         scenario = {
             "id": "scenario_02",
             "expected_db": {

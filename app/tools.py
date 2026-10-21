@@ -433,16 +433,14 @@ def escalate_to_human(
     if len(cleaned_note) > 500:
         return {"ok": False, "success": False, "error": "Invalid note: exceeds maximum length of 500 characters."}
 
-    stored_reason = f"[{reason_code}] {cleaned_note}".strip() if cleaned_note else f"[{reason_code}]"
-
-    esc = db.create_escalation(conn, order_id, stored_reason)
+    esc = db.create_escalation(conn, order_id, reason_code=reason_code, note=cleaned_note)
     return {
         "ok": True,
         "success": True,
         "escalation_id": esc["id"],
         "reason_code": reason_code,
         "note": cleaned_note,
-        "reason": esc["reason"],
+        "reason": f"[{reason_code}] {cleaned_note}".strip() if cleaned_note else f"[{reason_code}]",
     }
 
 

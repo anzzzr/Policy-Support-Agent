@@ -219,21 +219,25 @@ class TestUpdateOrderAddress:
 
 class TestCreateEscalation:
     def test_creates_escalation_with_order(self, seeded_db):
-        esc = create_escalation(seeded_db, 1006, "Refund above Rs 5000")
+        esc = create_escalation(seeded_db, 1006, "refund_over_limit", "Refund above Rs 5000")
         assert esc["order_id"] == 1006
-        assert esc["reason"] == "Refund above Rs 5000"
+        assert esc["reason_code"] == "refund_over_limit"
+        assert esc["note"] == "Refund above Rs 5000"
         assert esc["id"] is not None
 
     def test_creates_escalation_without_order(self, seeded_db):
         """Escalations for abusive language etc. may not have an order."""
-        esc = create_escalation(seeded_db, None, "Abusive language")
+        esc = create_escalation(seeded_db, None, "abuse", "Abusive language")
         assert esc["order_id"] is None
-        assert esc["reason"] == "Abusive language"
+        assert esc["reason_code"] == "abuse"
+        assert esc["note"] == "Abusive language"
 
     def test_escalation_is_persisted(self, seeded_db):
-        create_escalation(seeded_db, 1006, "Test")
+        create_escalation(seeded_db, 1006, "customer_request", "Test")
         rows = seeded_db.execute("SELECT * FROM escalations").fetchall()
         assert len(rows) == 1
+        assert rows[0]["reason_code"] == "customer_request"
+        assert rows[0]["note"] == "Test"
 
 
 # ── get_connection & update_order_status ──────────────────────────────

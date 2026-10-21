@@ -65,7 +65,8 @@ def create_tables(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS escalations (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id    INTEGER REFERENCES orders(id),  -- nullable: not every escalation is about a specific order
-            reason      TEXT    NOT NULL,
+            reason_code TEXT    NOT NULL,
+            note        TEXT    NOT NULL DEFAULT '',
             created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
         );
     """)
@@ -276,12 +277,15 @@ def update_order_status(conn: sqlite3.Connection, order_id: int, status: str) ->
 
 
 def create_escalation(
-    conn: sqlite3.Connection, order_id: int | None, reason: str
+    conn: sqlite3.Connection,
+    order_id: int | None,
+    reason_code: str,
+    note: str = "",
 ) -> dict:
-    """Log an escalation for human review.  order_id can be None."""
+    """Log an escalation for human review. order_id can be None."""
     cursor = conn.execute(
-        "INSERT INTO escalations (order_id, reason) VALUES (?, ?)",
-        (order_id, reason),
+        "INSERT INTO escalations (order_id, reason_code, note) VALUES (?, ?, ?)",
+        (order_id, reason_code, note),
     )
     conn.commit()
     row = conn.execute(
