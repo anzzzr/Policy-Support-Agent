@@ -873,6 +873,7 @@ class TestForbiddenEvaluation:
             {"tool": "cancel_order", "result": {"ok": False, "error": "Missing required argument(s) for 'cancel_order': order_id"}},
             {"tool": "escalate_to_human", "result": {"ok": False, "error": "Invalid reason_code: 'foo'"}},
             {"tool": "cancel_order", "result": {"ok": False, "error": "Invalid order_id: must be a positive integer."}},
+            {"tool": "cancel_order", "result": {"ok": False, "error": "Malformed JSON arguments for tool 'cancel_order': Expecting value"}},
         ]
         res = evaluate_run(db, scenario, trace=trace)
         assert res.tool_errors == {
@@ -880,6 +881,8 @@ class TestForbiddenEvaluation:
             "missing_argument": 1,
             "invalid_reason_code": 1,
             "invalid_order_id": 1,
+            "malformed_arguments": 1,
+            "total": 5,
         }
 
     def test_get_pip_freeze_sha256(self):

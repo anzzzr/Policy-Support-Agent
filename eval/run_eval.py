@@ -371,6 +371,8 @@ def evaluate_run(
         "missing_argument": 0,
         "invalid_reason_code": 0,
         "invalid_order_id": 0,
+        "malformed_arguments": 0,
+        "total": 0,
     }
     for t in trace:
         err = str(t.get("result", {}).get("error", "")).lower()
@@ -384,6 +386,16 @@ def evaluate_run(
             tool_errors["invalid_reason_code"] += 1
         if "invalid order_id" in err or "invalid order id" in err:
             tool_errors["invalid_order_id"] += 1
+        if "malformed json" in err or "malformed argument" in err or "must be a dictionary" in err:
+            tool_errors["malformed_arguments"] += 1
+
+    tool_errors["total"] = (
+        tool_errors["unexpected_argument"]
+        + tool_errors["missing_argument"]
+        + tool_errors["invalid_reason_code"]
+        + tool_errors["invalid_order_id"]
+        + tool_errors["malformed_arguments"]
+    )
 
     return RunResult(
         scenario_id=scenario_id,
