@@ -1064,6 +1064,63 @@ class TestRequirementsLock:
         verify_requirements_lock()  # should not raise
 
 
+class TestResultsMarkdownReport:
+    def test_single_row_fixture_says_one_scenario_and_one_run(self):
+        from eval.run_eval import format_results_markdown
+
+        row = {
+            "scenario_id": "scenario_01",
+            "category": "happy_path_refund",
+            "group": "dev",
+            "variant": "B",
+            "run_num": 1,
+            "success": True,
+            "db_matches": True,
+            "forbidden_triggered": False,
+            "blocked_violation_count": 0,
+            "policy_violation": False,
+            "should_escalate": False,
+            "did_escalate": False,
+            "failure_reasons": [],
+            "latency_sec": 12.34,
+            "tokens": 1000,
+            "tool_errors": {
+                "unexpected_argument": 0,
+                "missing_argument": 0,
+                "invalid_reason_code": 0,
+                "invalid_order_id": 0,
+                "malformed_arguments": 0,
+                "total": 0,
+            },
+            "smoke": False,
+            "model": "llama-3.1-8b-instant",
+            "policy_sha256": "fake_policy_hash",
+            "git_commit": "abcdef123456",
+            "dirty": False,
+        }
+        report = format_results_markdown([row])
+        assert "1 scenario" in report
+        assert "1 run" in report
+        assert "- **Distinct Scenarios:** 1" in report
+        assert "- **Total Runs:** 1" in report
+        assert "n/a (needs >=2 runs per scenario)" in report
+        assert "N/As" not in report
+
+    def test_smoke_row_adds_top_banner(self):
+        from eval.run_eval import format_results_markdown
+
+        row = {
+            "scenario_id": "scenario_01",
+            "variant": "B",
+            "run_num": 1,
+            "success": True,
+            "smoke": True,
+        }
+        report = format_results_markdown([row])
+        assert report.startswith("# SMOKE RUN - NOT A RESULT")
+
+
+
 
 
 

@@ -550,88 +550,183 @@ def load_all_scenarios(directory: Path = SCENARIOS_DIR) -> list[dict]:
 
 # ── Markdown Report Generator ─────────────────────────────────────────
 
-def format_results_markdown(
-    variant_metrics: dict[str, dict[str, Any]],
-    frequent_failures: list[dict[str, str]],
-) -> str:
-    """Render the comparison table and failure breakdown into Markdown."""
-    lines = [
-        "# Evaluation Results",
-        "",
-        "Evaluation results across 30 test scenarios (3 runs per scenario = 90 runs per variant).",
-        "Quality is measured by the **final database state**, not conversation style.",
-        "",
-        "## Variants Comparison",
-        "",
-        "| Metric | (A) No Policy in Prompt, Guard ON | (B) Policy in Prompt, Guard ON | (C) Policy in Prompt, Guard OFF |",
-        "|---|---|---|---|",
+def format_results_markdown(rows: list[dict]) -> str:
+    """Render the evaluation report directly from raw result rows."""
+    if not rows:
+        return "# Evaluation Results\n\n_No runs recorded._\n"
+
+    lines: list[str] = []
+
+    # 1. Smoke run top banner
+    if any(r.get("smoke") is True for r in rows):
+        lines.append("# SMOKE RUN - NOT A RESULT")
+        lines.append("")
+
+    lines.append("# Evaluation Results")
+    lines.append("")
+
+    # 2. Header metadata
+    distinct_scenarios = sorted(list(set(r.get("scenario_id", "") for r in rows if r.get("scenario_id"))))
+    num_scenarios = len(distinct_scenarios)
+    total_runs = len(rows)
+
+    from collections import Counter
+    sc_counts = Counter(r.get("scenario_id") for r in rows)
+    if sc_counts:
+        min_c = min(sc_counts.values())
+        max_c = max(sc_counts.values())
+        runs_per_sc_str = str(min_c) if min_c == max_c else f"{min_c}-{max_c}"
+    else:
+        runs_per_sc_str = "0"
+
+    variants_present = sorted(list(set(r.get("variant", "") for r in rows if r.get("variant"))))
+    variants_str = ", ".join(variants_present) if variants_present else "none"
+
+    first_row = rows[0]
+    model = first_row.get("model", "unknown")
+    date_str = first_row.get("date") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    git_commit = first_row.get("git_commit", "unknown")
+    dirty = first_row.get("dirty", False)
+    policy_hash = first_row.get("policy_sha256", "none")
+
+    lines.append(f"- **Distinct Scenarios:** {num_scenarios}")
+    lines.append(f"- **Runs per Scenario:** {runs_per_sc_str}")
+    lines.append(f"- **Total Runs:** {total_runs}")
+    lines.append(f"- **Variants Present:** {variants_str}")
+    lines.append(f"- **Model:** {model}")
+    lines.append(f"- **Date:** {date_str}")
+    lines.append(f"- **Git Commit:** {git_commit}")
+    lines.append(f"- **Dirty:** {dirty}")
+    lines.append(f"- **Policy Hash:** {policy_hash}")
+    lines.append("")
+
+    sc_word = "scenario" if num_scenarios == 1 else "scenarios"
+    run_word = "run" if total_runs == 1 else "runs"
+    lines.append(f"Evaluation results across {num_scenarios} {sc_word} ({total_runs} {run_word} total).")
+    lines.append("Quality is measured by the **final database state**, not conversation style.")
+    lines.append("")
+
+    # 3. Variants Comparison table
+    lines.append("## Variants Comparison")
+    lines.append("")
+
+    variant_cols = ["A", "B", "C"]
+    variant_labels = {
+        "A": "(A) No Policy in Prompt, Guard ON",
+        "B": "(B) Policy in Prompt, Guard ON",
+        "C": "(C) Policy in Prompt, Guard OFF",
+    }
+    for v in variants_present:
+        if v not in variant_cols:
+            variant_cols.append(v)
+            variant_labels[v] = f"({v}) Variant {v}"
+
+    header_cols = ["| Metric |"] + [f" {variant_labels[v]} |" for v in variant_cols]
+    sep_cols = ["|---|"] + ["---|" for _ in variant_cols]
+    lines.append("".join(header_cols))
+    lines.append("".join(sep_cols))
+
+    v_metrics: dict[str, dict[str, Any]] = {}
+    for v in variant_cols:
+        v_rows = [r for r in rows if r.get("variant") == v]
+        if not v_rows:
+            v_metrics[v] = {"present": False}
+            continue
+
+        v_total = len(v_rows)
+        v_passed = sum(1 for r in v_rows if r.get("success"))
+        v_success_rate = (v_passed / v_total * 100) if v_total else 0.0
+
+        v_violations = sum(1 for r in v_rows if r.get("policy_violation"))
+        v_violation_rate = (v_violations / v_total * 100) if v_total else 0.0
+
+        # Consistency: needs >= 2 runs per scenario
+        v_sc_counts = Counter(r.get("scenario_id") for r in v_rows)
+        if any(cnt < 2 for cnt in v_sc_counts.values()):
+            v_consistency_str = "n/a (needs >=2 runs per scenario)"
+        else:
+            consistent_count = sum(
+                1 for sc_id, cnt in v_sc_counts.items()
+                if all(r.get("success") for r in v_rows if r.get("scenario_id") == sc_id)
+            )
+            cons_pct = (consistent_count / len(v_sc_counts) * 100) if v_sc_counts else 0.0
+            v_consistency_str = f"{cons_pct:.1f}% ({consistent_count}/{len(v_sc_counts)})"
+
+        # Escalation metrics
+        escalated = [r for r in v_rows if r.get("did_escalate")]
+        correct_escalated = sum(1 for r in escalated if r.get("should_escalate"))
+        if not escalated:
+            v_precision_str = "N/A"
+        else:
+            prec_pct = (correct_escalated / len(escalated)) * 100
+            v_precision_str = f"{prec_pct:.1f}% ({correct_escalated}/{len(escalated)})"
+
+        should_esc = [r for r in v_rows if r.get("should_escalate")]
+        caught_esc = sum(1 for r in should_esc if r.get("did_escalate"))
+        if not should_esc:
+            v_recall_str = "N/A"
+        else:
+            rec_pct = (caught_esc / len(should_esc)) * 100
+            v_recall_str = f"{rec_pct:.1f}% ({caught_esc}/{len(should_esc)})"
+
+        resolved = [r for r in v_rows if r.get("success")]
+        avg_turns = (sum(r.get("user_turns", 0) for r in resolved) / len(resolved)) if resolved else None
+        avg_tool_calls = (sum(r.get("tool_calls", 0) for r in resolved) / len(resolved)) if resolved else None
+        avg_latency = (sum(r.get("latency_sec", 0.0) for r in v_rows) / v_total) if v_total else None
+        avg_tokens = (sum(r.get("tokens", 0) for r in v_rows) / v_total) if v_total else None
+
+        v_metrics[v] = {
+            "present": True,
+            "success_str": f"{v_success_rate:.1f}% ({v_passed}/{v_total})",
+            "consistency_str": v_consistency_str,
+            "violation_str": f"{v_violation_rate:.1f}% ({v_violations}/{v_total})",
+            "precision_str": v_precision_str,
+            "recall_str": v_recall_str,
+            "avg_turns": f"{avg_turns:.1f}" if avg_turns is not None else "N/A",
+            "avg_tool_calls": f"{avg_tool_calls:.1f}" if avg_tool_calls is not None else "N/A",
+            "avg_latency": f"{avg_latency:.2f}s" if avg_latency is not None else "N/A",
+            "avg_tokens": f"{avg_tokens:.0f}" if avg_tokens is not None else "N/A",
+        }
+
+    metric_rows = [
+        ("Final-state success rate", "success_str"),
+        ("Consistency", "consistency_str"),
+        ("Policy-violation rate", "violation_str"),
+        ("Escalation Precision", "precision_str"),
+        ("Escalation Recall", "recall_str"),
+        ("Avg turns per resolved scenario", "avg_turns"),
+        ("Avg tool calls per resolved scenario", "avg_tool_calls"),
+        ("Avg latency per scenario", "avg_latency"),
+        ("Avg tokens per scenario", "avg_tokens"),
     ]
 
-    va = variant_metrics.get("A", {})
-    vb = variant_metrics.get("B", {})
-    vc = variant_metrics.get("C", {})
+    for label, key in metric_rows:
+        row_cells = [f"| **{label}** |"]
+        for v in variant_cols:
+            m = v_metrics.get(v, {})
+            val = m.get(key, "N/A") if m.get("present") else "N/A"
+            row_cells.append(f" {val} |")
+        lines.append("".join(row_cells))
 
-    def fmt_pct(val):
-        return f"{val:.1f}%" if val is not None else "N/A"
-
-    def fmt_num(val, dec=1):
-        return f"{val:.{dec}f}" if val is not None else "N/A"
-
-    lines.append(
-        f"| **Final-state success rate** | {fmt_pct(va.get('success_rate'))} | {fmt_pct(vb.get('success_rate'))} | {fmt_pct(vc.get('success_rate'))} |"
-    )
-    lines.append(
-        f"| **Consistency (all 3 runs passed)** | {fmt_pct(va.get('consistency_rate'))} | {fmt_pct(vb.get('consistency_rate'))} | {fmt_pct(vc.get('consistency_rate'))} |"
-    )
-    lines.append(
-        f"| **Policy-violation rate** | {fmt_pct(va.get('violation_rate'))} | {fmt_pct(vb.get('violation_rate'))} | {fmt_pct(vc.get('violation_rate'))} |"
-    )
-    lines.append(
-        f"| **Escalation Precision** | {fmt_pct(va.get('escalation_precision'))} | {fmt_pct(vb.get('escalation_precision'))} | {fmt_pct(vc.get('escalation_precision'))} |"
-    )
-    lines.append(
-        f"| **Escalation Recall** | {fmt_pct(va.get('escalation_recall'))} | {fmt_pct(vb.get('escalation_recall'))} | {fmt_pct(vc.get('escalation_recall'))} |"
-    )
-    lines.append(
-        f"| **Avg turns per resolved scenario** | {fmt_num(va.get('avg_turns_resolved'))} | {fmt_num(vb.get('avg_turns_resolved'))} | {fmt_num(vc.get('avg_turns_resolved'))} |"
-    )
-    lines.append(
-        f"| **Avg tool calls per resolved scenario** | {fmt_num(va.get('avg_tool_calls_resolved'))} | {fmt_num(vb.get('avg_tool_calls_resolved'))} | {fmt_num(vc.get('avg_tool_calls_resolved'))} |"
-    )
-    lines.append(
-        f"| **Avg latency per scenario** | {fmt_num(va.get('avg_latency'), 2)}s | {fmt_num(vb.get('avg_latency'), 2)}s | {fmt_num(vc.get('avg_latency'), 2)}s |"
-    )
-    lines.append(
-        f"| **Avg tokens per scenario** | {fmt_num(va.get('avg_tokens'), 0)} | {fmt_num(vb.get('avg_tokens'), 0)} | {fmt_num(vc.get('avg_tokens'), 0)} |"
-    )
-
+    # 4. Failure breakdown
     lines.append("")
     lines.append("## Most Frequent Scenario Failures")
     lines.append("")
-    if frequent_failures:
-        for item in frequent_failures:
-            lines.append(
-                f"- **{item['scenario_id']}** ({item['description']}): {item['reason']}"
-            )
+
+    failure_counts: dict[str, list[str]] = {}
+    for r in rows:
+        if not r.get("success"):
+            for reason in r.get("failure_reasons", []):
+                failure_counts.setdefault(r.get("scenario_id", "unknown"), []).append(reason)
+
+    if failure_counts:
+        for sc_id, reasons in sorted(
+            failure_counts.items(), key=lambda item: len(item[1]), reverse=True
+        )[:5]:
+            most_common = max(set(reasons), key=reasons.count)
+            lines.append(f"- **{sc_id}**: {most_common}")
     else:
         lines.append("_No failures recorded across evaluation runs._")
-
-    # Ambiguous Scenarios (reported separately from core pass rate)
-    has_ambiguous = any("ambiguous_metrics" in m for m in [va, vb, vc])
-    if has_ambiguous:
-        lines.append("")
-        lines.append("## Ambiguous Scenarios (Reported Separately)")
-        lines.append("")
-        lines.append("Ambiguous scenarios (e.g., scenario_38) are tracked separately and excluded from core pass rates:")
-        lines.append("")
-        lines.append("| Metric | (A) Guard ON | (B) Prompt + Guard ON | (C) Prompt + Guard OFF |")
-        lines.append("|---|---|---|---|")
-        amb_a = va.get("ambiguous_metrics", {})
-        amb_b = vb.get("ambiguous_metrics", {})
-        amb_c = vc.get("ambiguous_metrics", {})
-        lines.append(f"| **Success rate** | {fmt_pct(amb_a.get('success_rate'))} | {fmt_pct(amb_b.get('success_rate'))} | {fmt_pct(amb_c.get('success_rate'))} |")
-        lines.append(f"| **Escalation Precision** | {fmt_pct(amb_a.get('escalation_precision'))} | {fmt_pct(amb_b.get('escalation_precision'))} | {fmt_pct(amb_c.get('escalation_precision'))} |")
-        lines.append(f"| **Escalation Recall** | {fmt_pct(amb_a.get('escalation_recall'))} | {fmt_pct(amb_b.get('escalation_recall'))} | {fmt_pct(amb_c.get('escalation_recall'))} |")
 
     lines.append("")
     return "\n".join(lines)
@@ -1404,7 +1499,7 @@ def main():
         })
 
     # Write RESULTS.md into run directory
-    report_md = format_results_markdown(variant_metrics, frequent_failures)
+    report_md = format_results_markdown(jsonl_entries)
     run_results_md.write_text(report_md)
     print(f"\nWrote full evaluation report to {run_results_md}")
 

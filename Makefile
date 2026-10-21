@@ -13,19 +13,21 @@ eval:
 
 publish-results:
 	@mkdir -p eval/published
-	@if [ -d eval/runs/latest ]; then \
-		if [ -f eval/runs/latest/.smoke ] || grep -q '"smoke": true' eval/runs/latest/results.jsonl 2>/dev/null; then \
-			echo "Cannot publish smoke run results."; \
+	@target_dir=$${RUN_DIR:-eval/runs/latest}; \
+	if [ -d "$$target_dir" ]; then \
+		if [ -f "$$target_dir/.smoke" ] || grep -Eq '"smoke"[[:space:]]*:[[:space:]]*true' "$$target_dir"/*.jsonl 2>/dev/null; then \
+			echo "Cannot publish smoke run results: $$target_dir contains smoke rows."; \
 			exit 1; \
 		fi; \
-		for f in results.jsonl RESULTS.md checkpoint.json config.json; do \
-			if [ -f eval/runs/latest/$$f ]; then \
-				cp eval/runs/latest/$$f eval/published/$$f; \
+		for f in results.jsonl results_heldout.jsonl RESULTS.md RESULTS_HELDOUT.md checkpoint.json config.json; do \
+			if [ -f "$$target_dir/$$f" ]; then \
+				cp "$$target_dir/$$f" eval/published/$$f; \
 			fi; \
 		done; \
-		echo "Published results from eval/runs/latest/ to eval/published/"; \
+		echo "Published results from $$target_dir to eval/published/"; \
 	else \
-		echo "No eval runs found in eval/runs/latest to publish."; \
+		echo "No eval runs found in $$target_dir to publish."; \
+		exit 1; \
 	fi
 
 validate-scenarios:
