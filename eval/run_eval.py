@@ -905,6 +905,29 @@ def verify_tag_gating(is_heldout: bool) -> None:
             raise RuntimeError(
                 f"Policy file has changed since tag '{tag}' (tag: {tag_hash}, current: {curr_hash})."
             )
+        diff_res = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--exit-code",
+                tag,
+                "HEAD",
+                "--",
+                "app",
+                "policy",
+                "scenarios",
+                "eval/run_eval.py",
+                "requirements.txt",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT_DIR),
+        )
+        if diff_res.returncode != 0:
+            raise RuntimeError(
+                f"Frozen files have changed since tag '{tag}'. "
+                f"git diff --exit-code {tag} HEAD -- app policy scenarios eval/run_eval.py requirements.txt failed."
+            )
 
 
 # ── Main runner ───────────────────────────────────────────────────────

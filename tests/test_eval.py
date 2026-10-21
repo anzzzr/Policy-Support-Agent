@@ -938,12 +938,35 @@ class TestTagGating:
     def test_verify_tag_gating_dev_passes_when_matching(self, monkeypatch):
         from eval.run_eval import verify_tag_gating, ROOT_DIR
         import eval.run_eval
+        import subprocess
 
         policy_bytes = (ROOT_DIR / "policy" / "policy.md").read_bytes()
         monkeypatch.setattr(eval.run_eval, "_check_git_tag", lambda tag: None)
         monkeypatch.setattr(eval.run_eval, "_get_tag_blob", lambda tag, path: policy_bytes)
 
+        def mock_run(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
         verify_tag_gating(is_heldout=False)
+
+    def test_verify_tag_gating_dev_detects_git_diff_failure(self, monkeypatch):
+        from eval.run_eval import verify_tag_gating, ROOT_DIR
+        import eval.run_eval
+        import subprocess
+
+        policy_bytes = (ROOT_DIR / "policy" / "policy.md").read_bytes()
+        monkeypatch.setattr(eval.run_eval, "_check_git_tag", lambda tag: None)
+        monkeypatch.setattr(eval.run_eval, "_get_tag_blob", lambda tag, path: policy_bytes)
+
+        def mock_run(cmd, **kwargs):
+            if "diff" in cmd:
+                return subprocess.CompletedProcess(cmd, 1, stdout="diff detected", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        with pytest.raises(RuntimeError, match="Frozen files have changed since tag 'policy-v2-frozen'"):
+            verify_tag_gating(is_heldout=False)
 
 
 class TestSmokeFlag:
