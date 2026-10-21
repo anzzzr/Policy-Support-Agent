@@ -1122,6 +1122,10 @@ class TestResultsMarkdownReport:
         assert "- **Total Runs:** 1" in report
         assert "n/a (needs >=2 runs per scenario)" in report
         assert "N/As" not in report
+        assert "Total tool errors" in report
+        assert "Total retries" in report
+        assert "Avg prompt tokens per scenario" in report
+        assert "Avg completion tokens per scenario" in report
 
     def test_smoke_row_adds_top_banner(self):
         from eval.run_eval import format_results_markdown

@@ -711,6 +711,10 @@ def format_results_markdown(rows: list[dict]) -> str:
         avg_latency_no_wait = (
             sum(r.get("latency_without_rate_limit_sec", r.get("latency_sec", 0.0)) for r in v_rows) / v_total
         ) if v_total else None
+        total_tool_errors = sum(r.get("tool_errors", {}).get("total", 0) for r in v_rows)
+        total_retries = sum(r.get("llm_retries", 0) for r in v_rows)
+        avg_prompt_tok = (sum(r.get("prompt_tokens", 0) for r in v_rows) / v_total) if v_total else None
+        avg_comp_tok = (sum(r.get("completion_tokens", 0) for r in v_rows) / v_total) if v_total else None
         avg_tokens = (sum(r.get("tokens", 0) for r in v_rows) / v_total) if v_total else None
 
         v_metrics[v] = {
@@ -724,6 +728,10 @@ def format_results_markdown(rows: list[dict]) -> str:
             "avg_tool_calls": f"{avg_tool_calls:.1f}" if avg_tool_calls is not None else "N/A",
             "avg_latency": f"{avg_latency:.2f}s" if avg_latency is not None else "N/A",
             "avg_latency_no_wait": f"{avg_latency_no_wait:.2f}s" if avg_latency_no_wait is not None else "N/A",
+            "total_tool_errors": str(total_tool_errors),
+            "total_retries": str(total_retries),
+            "avg_prompt_tokens": f"{avg_prompt_tok:.0f}" if avg_prompt_tok is not None else "N/A",
+            "avg_completion_tokens": f"{avg_comp_tok:.0f}" if avg_comp_tok is not None else "N/A",
             "avg_tokens": f"{avg_tokens:.0f}" if avg_tokens is not None else "N/A",
         }
 
@@ -737,6 +745,10 @@ def format_results_markdown(rows: list[dict]) -> str:
         ("Avg tool calls per resolved scenario", "avg_tool_calls"),
         ("Avg latency per scenario (total)", "avg_latency"),
         ("Avg latency per scenario (excl. rate-limit waits)", "avg_latency_no_wait"),
+        ("Total tool errors", "total_tool_errors"),
+        ("Total retries", "total_retries"),
+        ("Avg prompt tokens per scenario", "avg_prompt_tokens"),
+        ("Avg completion tokens per scenario", "avg_completion_tokens"),
         ("Avg tokens per scenario", "avg_tokens"),
     ]
 
