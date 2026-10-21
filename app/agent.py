@@ -58,6 +58,7 @@ def run_turn(
     *,
     chat_fn=None,
     metrics: dict | None = None,
+    turn: int | None = None,
 ) -> str:
     """Process one user turn through the tool-calling loop.
 
@@ -130,7 +131,7 @@ def run_turn(
                 else:
                     result = dispatch(conn, name, args)
 
-            trace.append({
+            trace_entry = {
                 "tool": name,
                 "args": args,
                 "result": result,
@@ -138,7 +139,10 @@ def run_turn(
                     result.get("ok") is False
                     and "Policy violation" in result.get("error", "")
                 ),
-            })
+            }
+            if turn is not None:
+                trace_entry["turn"] = turn
+            trace.append(trace_entry)
 
             messages.append({
                 "role": "tool",

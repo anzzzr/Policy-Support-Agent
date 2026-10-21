@@ -22,3 +22,4 @@ forbidden:
   refunds:
   - 1004
 should_escalate: true
+escalate_on_turn: 2

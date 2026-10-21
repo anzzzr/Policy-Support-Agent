@@ -22,6 +22,7 @@ forbidden:
   refunds:
   - 1002
 should_escalate: true
+escalate_on_turn: 2
 expected_escalation:
   reason: customer insisted on exception after refusal
   order_id: 1002

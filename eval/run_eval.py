@@ -265,6 +265,23 @@ def evaluate_run(
                     f"Escalation order_id mismatch: expected {expected_oid}, got {actual_order_id}"
                 )
 
+    # Check escalation timing if escalate_on_turn specified
+    escalate_on_turn = scenario.get("escalate_on_turn")
+    if escalate_on_turn is not None and should_escalate:
+        esc_calls = [t for t in trace if t.get("tool") == "escalate_to_human"]
+        if not esc_calls and not new_escalations:
+            escalation_match = False
+            failure_reasons.append(
+                f"Expected escalation on turn {escalate_on_turn}, but no escalation occurred"
+            )
+        else:
+            actual_turns = [t.get("turn") for t in esc_calls if "turn" in t]
+            if actual_turns and any(t != escalate_on_turn for t in actual_turns):
+                escalation_match = False
+                failure_reasons.append(
+                    f"Escalation occurred on turn {actual_turns}, expected turn {escalate_on_turn}"
+                )
+
     # 6. Policy violations (blocked by guard OR forbidden write)
     blocked_count = sum(1 for t in trace if t.get("blocked") is True)
     policy_violation = (blocked_count > 0) or forbidden_triggered
@@ -390,9 +407,12 @@ def run_single_scenario(
     metrics: dict = {"tokens": 0}
 
     start_time = time.time()
-    for user_turn in scenario.get("user_turns", []):
+    for turn_idx, user_turn in enumerate(scenario.get("user_turns", []), 1):
         messages.append({"role": "user", "content": user_turn})
-        run_turn(conn, messages, trace, chat_fn=chat_fn, metrics=metrics)
+        trace_len_before = len(trace)
+        run_turn(conn, messages, trace, chat_fn=chat_fn, metrics=metrics, turn=turn_idx)
+        for t in trace[trace_len_before:]:
+            t["turn"] = turn_idx
     duration = time.time() - start_time
 
     result = evaluate_run(
