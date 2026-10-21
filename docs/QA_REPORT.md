@@ -1,5 +1,8 @@
 # QA Audit Report: Policy Support Agent
 
+> [!WARNING]
+> **Initial audit - superseded; some outputs not reproducible with the canonical seed**
+
 ## 0. Snapshot
 - **Commit:** `61a085e4853f841a06da61a9b302acf9dd2a2aff`
 - **Date:** 2026-10-21
