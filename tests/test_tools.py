@@ -447,14 +447,22 @@ class TestIssueRefundValidation:
         assert res["success"] is False
         assert "exceeds order total" in res["error"]
 
-    def test_cap_decimals_to_2_places(self, db):
+    def test_reject_more_than_2_decimal_places(self, db):
         mark_order_verified(db, 1003)
-        db.execute("UPDATE orders SET total = 123.46 WHERE id = 1003")
+        for bad_amount in [123.456, 123.4567, 500.001]:
+            res = issue_refund(db, 1003, bad_amount, _today=TODAY)
+            assert res["ok"] is False
+            assert res["success"] is False
+            assert "decimal places" in res["error"]
+
+    def test_allow_up_to_2_decimal_places(self, db):
+        mark_order_verified(db, 1003)
+        db.execute("UPDATE orders SET total = 123.45 WHERE id = 1003")
         db.commit()
-        res = issue_refund(db, 1003, 123.4567, _today=TODAY)
+        res = issue_refund(db, 1003, 123.45, _today=TODAY)
         assert res["ok"] is True
         assert res["success"] is True
-        assert res["amount"] == 123.46
+        assert res["amount"] == 123.45
 
 
 class TestToolsTypeAndInputValidation:

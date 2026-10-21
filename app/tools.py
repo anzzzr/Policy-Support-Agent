@@ -298,6 +298,14 @@ def issue_refund(
             "error": "Invalid refund amount: must be greater than zero.",
         }
 
+    # Reject amounts with more than 2 decimal places
+    if round(abs(amount * 100 - round(amount * 100)), 5) > 0:
+        return {
+            "ok": False,
+            "success": False,
+            "error": "Invalid refund amount: exceeds maximum 2 decimal places.",
+        }
+
     amount = round(float(amount), 2)
     order = db.get_order(conn, order_id)
 
