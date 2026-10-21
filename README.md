@@ -38,8 +38,27 @@ The agent reads [policy/policy.md](policy/policy.md) directly in its system prom
 9. **Mandatory Escalation:** Escalate abusive language, legal/fraud threats, or out-of-scope requests (e.g. price matching).
 10. **Data Privacy:** Never leak another customer's data or order details.
 
+### Architectural Layers & Guard Behavior
+
+The codebase implements two distinct defense-in-depth validation layers:
+
+1. **Always-On Validation (Active under BOTH `GUARD=on` and `GUARD=off`):**
+   - **Type & Number Integrity:** Input types, non-null, NaN/Infinity rejection, positive integers for IDs.
+   - **SQL Injection Prevention:** Strictly parameterized SQL queries and non-integer order ID rejections.
+   - **Data Sanitization:** Rejection of control characters, newlines (`\n`, `\r`), and addresses exceeding 300 characters.
+   - **Existence Checks:** Clean error reporting (`"Order not found."`) when an order ID does not exist in the database, without modifying database state.
+
+2. **Policy Guard Rules 1–7 (Active ONLY when `GUARD=on`, Disabled when `GUARD=off`):**
+   - **Rule 1 (Identity Verification):** Mutating tools and eligibility checks require session verification via `lookup_order`.
+   - **Rule 2 (Delivery & Window):** Refunds require order status `delivered` and within 30 days of delivery.
+   - **Rule 3 (Final Sale):** Items flagged `is_final_sale=1` cannot be refunded.
+   - **Rule 4 (Amount & Threshold):** Refunds must equal full order total; amounts > ₹5,000 must escalate to human.
+   - **Rule 5 (Single Refund):** Exactly one refund per order ID (blocks double refunds).
+   - **Rule 6 (Cancellation Window):** Cancellations allowed only while status is `processing` (blocks cancellation of shipped, delivered, or already cancelled/refunded orders).
+   - **Rule 7 (Address Updates):** Address changes allowed only while status is `processing`.
+
 > [!NOTE]
-> When `GUARD=off` is set (used exclusively for ablation benchmarks in Variant C), all code-level enforcement gates—including Rule 1 identity verification and rules 2–7 business logic checks—are disabled to isolate and measure prompt-only model compliance.
+> When `GUARD=off` is set (used exclusively for ablation benchmarks in Variant C), Layer 2 policy enforcement gates are disabled to measure model compliance from prompt instructions alone, while Layer 1 always-on integrity checks remain active.
 
 ---
 

@@ -201,58 +201,29 @@ class TestGuardOffDomainInvariants:
         current = conn.execute("SELECT id, status, total, address FROM orders").fetchall()
         assert current == order_snapshot
 
-    def test_guard_off_rejects_double_refund(self, conn):
-        # 1. Order 1022 already has a refund row in seed
-        count_before = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
-        res = issue_refund(conn, 1022, 1200.0, _today=EVAL_DATE)
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "already refunded" in res["error"].lower()
-        assert conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"] == count_before
-
-        # 2. Order 1024 refunded once, then second refund attempt rejected
+    def test_guard_off_allows_double_refund(self, conn):
+        # With GUARD=off, Rule 5 is disabled: multiple refunds are permitted
         first = issue_refund(conn, 1024, 5000.0, _today=EVAL_DATE)
         assert first["ok"] is True
-        assert get_order(conn, 1024)["status"] == "refunded"
-        count_after_first = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
         second = issue_refund(conn, 1024, 5000.0, _today=EVAL_DATE)
-        assert second["ok"] is False
-        assert second["success"] is False
-        assert "already refunded" in second["error"].lower()
-        assert conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"] == count_after_first
-        assert get_order(conn, 1024)["status"] == "refunded"
+        assert second["ok"] is True
 
-    def test_guard_off_rejects_refund_after_cancel(self, conn):
-        # Cancel order 1001 first
+    def test_guard_off_allows_refund_after_cancel(self, conn):
+        # With GUARD=off, Rule 2 is disabled: refunding cancelled order is permitted
         cancel_res = cancel_order(conn, 1001)
         assert cancel_res["ok"] is True
         assert get_order(conn, 1001)["status"] == "cancelled"
-
-        count_before = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
         res = issue_refund(conn, 1001, 2500.0, _today=EVAL_DATE)
-        assert res["ok"] is False
-        assert res["success"] is False
-        assert "cancelled" in res["error"].lower()
-        assert conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"] == count_before
-        assert get_order(conn, 1001)["status"] == "cancelled"
+        assert res["ok"] is True
 
-    def test_guard_off_rejects_cancel_after_refund(self, conn):
-        # Order 1022 already has a refund in seed
-        res1 = cancel_order(conn, 1022)
-        assert res1["ok"] is False
-        assert res1["success"] is False
-        assert "refunded" in res1["error"].lower()
-
-        # Order 1024 refunded via issue_refund, then cancel rejected
+    def test_guard_off_allows_cancel_after_refund(self, conn):
+        # With GUARD=off, Rule 6 is disabled: cancelling refunded order is permitted
         issue_res = issue_refund(conn, 1024, 5000.0, _today=EVAL_DATE)
         assert issue_res["ok"] is True
         assert get_order(conn, 1024)["status"] == "refunded"
-
-        res2 = cancel_order(conn, 1024)
-        assert res2["ok"] is False
-        assert res2["success"] is False
-        assert "refunded" in res2["error"].lower()
-        assert get_order(conn, 1024)["status"] == "refunded"
+        res = cancel_order(conn, 1024)
+        assert res["ok"] is True
+        assert get_order(conn, 1024)["status"] == "cancelled"
 
     def test_guard_off_rejects_10000_char_address(self, conn):
         orig_addr = get_order(conn, 1001)["address"]
@@ -271,4 +242,44 @@ class TestGuardOffDomainInvariants:
             assert res["success"] is False
             assert "newlines" in res["error"]
         assert get_order(conn, 1001)["address"] == orig_addr
+
+
+class TestPolicyRulesGuardOn:
+    """Policy rules 1-7 are strictly enforced when GUARD=on."""
+
+    def test_guard_on_blocks_double_refund(self, conn):
+        # Order 1022 already has a refund row in seed; Rule 5 blocks it
+        res = issue_refund(conn, 1022, 1200.0, _today=EVAL_DATE)
+        assert res["ok"] is False
+        assert "rule 1" in res["error"].lower()
+
+        lookup_order(conn, 1022, "rohan@example.com")
+        res2 = issue_refund(conn, 1022, 1200.0, _today=EVAL_DATE)
+        assert res2["ok"] is False
+        assert "rule 5" in res2["error"].lower()
+
+    def test_guard_on_blocks_refund_after_cancel(self, conn):
+        lookup_order(conn, 1001, "aarav@example.com")
+        cancel_res = cancel_order(conn, 1001)
+        assert cancel_res["ok"] is True
+        assert get_order(conn, 1001)["status"] == "cancelled"
+
+        res = issue_refund(conn, 1001, 2500.0, _today=EVAL_DATE)
+        assert res["ok"] is False
+        assert "rule 2" in res["error"].lower()
+
+    def test_guard_on_blocks_cancel_after_refund(self, conn):
+        # Order 1008 is refunded in seed (customer sneha@example.com)
+        lookup_order(conn, 1008, "sneha@example.com")
+        res = cancel_order(conn, 1008)
+        assert res["ok"] is False
+        assert "rule 6" in res["error"].lower()
+
+    def test_guard_on_blocks_cancel_after_cancel(self, conn):
+        # Order 1007 is already cancelled in seed (customer sneha@example.com)
+        lookup_order(conn, 1007, "sneha@example.com")
+        res = cancel_order(conn, 1007)
+        assert res["ok"] is False
+        assert "rule 6" in res["error"].lower()
+
 

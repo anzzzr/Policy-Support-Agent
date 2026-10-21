@@ -355,10 +355,6 @@ def issue_refund(
     else:
         if order is None:
             return {"ok": False, "success": False, "error": "Order not found."}
-        if order["status"] == "cancelled":
-            return {"ok": False, "success": False, "error": "Cannot refund a cancelled order."}
-        if order["status"] == "refunded" or db.get_refunds_for_order(conn, order_id):
-            return {"ok": False, "success": False, "error": "Order is already refunded."}
         if amount > order["total"]:
             return {
                 "ok": False,
@@ -402,10 +398,6 @@ def cancel_order(
         order = db.get_order(conn, order_id)
         if order is None:
             return {"ok": False, "success": False, "error": "Order not found."}
-        if order["status"] == "refunded" or db.get_refunds_for_order(conn, order_id):
-            return {"ok": False, "success": False, "error": "Cannot cancel a refunded order."}
-        if order["status"] == "cancelled":
-            return {"ok": False, "success": False, "error": "Order is already cancelled."}
 
     order = db.cancel_order(conn, order_id)
     return {
