@@ -613,4 +613,13 @@ class TestHarnessGitHygiene:
         assert len(commit) == 40 or commit == "unknown"
         assert isinstance(dirty, bool)
 
+    def test_get_harness_hashes(self):
+        from eval.run_eval import get_harness_hashes
+        hashes = get_harness_hashes()
+        for k in ["policy_sha256", "seed_sha256", "scenarios_sha256", "heldout_sha256"]:
+            assert k in hashes
+            assert isinstance(hashes[k], str)
+            assert len(hashes[k]) == 64 or hashes[k] == "none"
+
+
 

@@ -527,6 +527,51 @@ def format_results_markdown(
     return "\n".join(lines)
 
 
+def compute_dir_sha256(directory: Path, glob_pattern: str = "*.yaml") -> str:
+    """Compute a deterministic combined SHA-256 hash of all matching files in a directory."""
+    if not directory.exists():
+        return "none"
+    files = sorted(directory.glob(glob_pattern))
+    if not files:
+        return "none"
+    hasher = hashlib.sha256()
+    for f in files:
+        hasher.update(f.name.encode("utf-8"))
+        hasher.update(f.read_bytes())
+    return hasher.hexdigest()
+
+
+def get_harness_hashes() -> dict[str, str]:
+    """Compute current SHA-256 hashes for policy, seed, scenarios, and heldout files."""
+    policy_path = ROOT_DIR / "policy" / "policy.md"
+    policy_sha256 = (
+        hashlib.sha256(policy_path.read_bytes()).hexdigest()
+        if policy_path.exists()
+        else "none"
+    )
+
+    seed_path = ROOT_DIR / "app" / "db.py"
+    seed_sha256 = (
+        hashlib.sha256(seed_path.read_bytes()).hexdigest()
+        if seed_path.exists()
+        else "none"
+    )
+
+    scenarios_sha256 = compute_dir_sha256(SCENARIOS_DIR, "*.yaml")
+
+    heldout_dir = ROOT_DIR / "heldout"
+    if not heldout_dir.exists():
+        heldout_dir = ROOT_DIR / "scenarios" / "heldout"
+    heldout_sha256 = compute_dir_sha256(heldout_dir, "*.yaml")
+
+    return {
+        "policy_sha256": policy_sha256,
+        "seed_sha256": seed_sha256,
+        "scenarios_sha256": scenarios_sha256,
+        "heldout_sha256": heldout_sha256,
+    }
+
+
 def get_git_info() -> tuple[str, bool]:
     """Retrieve current commit hash and whether the working tree is dirty."""
     try:
@@ -721,8 +766,7 @@ def main():
 
                     v_results.append(res)
                     all_results.append(res)
-                    policy_bytes = (ROOT_DIR / "policy" / "policy.md").read_bytes()
-                    current_policy_sha = hashlib.sha256(policy_bytes).hexdigest()
+                    harness_hashes = get_harness_hashes()
 
                     entry = {
                         "scenario_id": res.scenario_id,
@@ -742,7 +786,10 @@ def main():
                         "tokens": res.tokens,
                         "eval_today": res.eval_today,
                         "policy_version": "v2",
-                        "policy_sha256": current_policy_sha,
+                        "policy_sha256": harness_hashes["policy_sha256"],
+                        "seed_sha256": harness_hashes["seed_sha256"],
+                        "scenarios_sha256": harness_hashes["scenarios_sha256"],
+                        "heldout_sha256": harness_hashes["heldout_sha256"],
                         "git_commit": git_commit,
                         "dirty": is_dirty,
                     }
