@@ -994,6 +994,9 @@ def verify_tag_gating(is_heldout: bool) -> None:
                 "scenarios",
                 "eval/run_eval.py",
                 "requirements.txt",
+                "requirements.lock",
+                "eval/validate_scenarios.py",
+                "Makefile",
             ],
             capture_output=True,
             text=True,
@@ -1002,7 +1005,7 @@ def verify_tag_gating(is_heldout: bool) -> None:
         if diff_res.returncode != 0:
             raise RuntimeError(
                 f"Frozen files have changed since tag '{tag}'. "
-                f"git diff --exit-code {tag} HEAD -- app policy scenarios eval/run_eval.py requirements.txt failed."
+                f"git diff --exit-code {tag} HEAD -- app policy scenarios eval/run_eval.py requirements.txt requirements.lock eval/validate_scenarios.py Makefile failed."
             )
 
 
