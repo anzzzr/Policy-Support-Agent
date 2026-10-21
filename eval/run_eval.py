@@ -817,6 +817,91 @@ def get_git_info() -> tuple[str, bool]:
     return commit_hash, dirty
 
 
+def _check_git_tag(tag: str) -> None:
+    """Verify that a git tag exists and is an ancestor of HEAD."""
+    result = subprocess.run(
+        ["git", "tag", "--list", tag],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT_DIR),
+    )
+    tags = [t.strip() for t in result.stdout.strip().splitlines() if t.strip()]
+    if tag not in tags:
+        raise RuntimeError(f"Required git tag '{tag}' not found. Run: git tag {tag}")
+
+    anc_result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", tag, "HEAD"],
+        capture_output=True,
+        cwd=str(ROOT_DIR),
+    )
+    if anc_result.returncode != 0:
+        raise RuntimeError(f"Git tag '{tag}' is not an ancestor of HEAD.")
+
+
+def _get_tag_blob(tag: str, relative_path: str) -> bytes:
+    """Retrieve the content of a file at a specific git tag."""
+    res = subprocess.run(
+        ["git", "show", f"{tag}:{relative_path}"],
+        capture_output=True,
+        check=True,
+        cwd=str(ROOT_DIR),
+    )
+    return res.stdout
+
+
+def _get_tag_dir_sha256(tag: str, directory_rel: str) -> str:
+    """Compute combined SHA-256 for all yaml files in a directory at a git tag."""
+    res = subprocess.run(
+        ["git", "ls-tree", "-r", tag, "--name-only", directory_rel],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT_DIR),
+    )
+    if res.returncode != 0:
+        return "none"
+    files = sorted([
+        line.strip()
+        for line in res.stdout.strip().splitlines()
+        if line.strip() and line.strip().endswith(".yaml")
+    ])
+    if not files:
+        return "none"
+    hasher = hashlib.sha256()
+    for rel_path in files:
+        fname = Path(rel_path).name
+        blob = _get_tag_blob(tag, rel_path)
+        hasher.update(fname.encode("utf-8"))
+        hasher.update(blob)
+    return hasher.hexdigest()
+
+
+def verify_tag_gating(is_heldout: bool) -> None:
+    """Enforce tag existence, ancestry, and content integrity before running evaluations."""
+    if is_heldout:
+        tag = "heldout-frozen"
+        _check_git_tag(tag)
+        heldout_dir = ROOT_DIR / "scenarios_heldout"
+        curr_hash = compute_dir_sha256(heldout_dir, "*.yaml")
+        tag_hash = _get_tag_dir_sha256(tag, "scenarios_heldout")
+        if curr_hash != tag_hash:
+            raise RuntimeError(
+                f"Held-out scenarios have changed since tag '{tag}' (tag: {tag_hash}, current: {curr_hash})."
+            )
+    else:
+        tag = "policy-v2-frozen"
+        _check_git_tag(tag)
+        policy_path = ROOT_DIR / "policy" / "policy.md"
+        if not policy_path.exists():
+            raise RuntimeError(f"Policy file not found at {policy_path}")
+        curr_hash = hashlib.sha256(policy_path.read_bytes()).hexdigest()
+        tag_blob = _get_tag_blob(tag, "policy/policy.md")
+        tag_hash = hashlib.sha256(tag_blob).hexdigest()
+        if curr_hash != tag_hash:
+            raise RuntimeError(
+                f"Policy file has changed since tag '{tag}' (tag: {tag_hash}, current: {curr_hash})."
+            )
+
+
 # ── Main runner ───────────────────────────────────────────────────────
 
 def main():
@@ -873,12 +958,18 @@ def main():
         )
         sys.exit(1)
 
+    try:
+        verify_tag_gating(cli_args.heldout)
+    except RuntimeError as err:
+        print(f"\n[ERROR] Tag gating failure: {err}\n")
+        sys.exit(1)
+
     run_id = cli_args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
     runs_dir = EVAL_DIR / "runs"
     run_dir = runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    run_results_jsonl = run_dir / "results.jsonl"
-    run_results_md = run_dir / "RESULTS.md"
+    run_results_jsonl = run_dir / ("results_heldout.jsonl" if cli_args.heldout else "results.jsonl")
+    run_results_md = run_dir / ("RESULTS_HELDOUT.md" if cli_args.heldout else "RESULTS.md")
 
     api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("LLM_API_KEY")
     target_dir = ROOT_DIR / "scenarios_heldout" if cli_args.heldout else SCENARIOS_DIR

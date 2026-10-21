@@ -882,6 +882,71 @@ class TestForbiddenEvaluation:
         assert len(h) == 64
 
 
+class TestTagGating:
+    def test_check_git_tag_missing_tag_raises(self, monkeypatch):
+        from eval.run_eval import _check_git_tag
+        import subprocess
+
+        def mock_run(cmd, **kwargs):
+            if cmd[1] == "tag":
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        with pytest.raises(RuntimeError, match="Required git tag 'policy-v2-frozen' not found"):
+            _check_git_tag("policy-v2-frozen")
+
+    def test_check_git_tag_not_ancestor_raises(self, monkeypatch):
+        from eval.run_eval import _check_git_tag
+        import subprocess
+
+        def mock_run(cmd, **kwargs):
+            if cmd[1] == "tag":
+                return subprocess.CompletedProcess(cmd, 0, stdout="policy-v2-frozen\n", stderr="")
+            if cmd[1] == "merge-base":
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        with pytest.raises(RuntimeError, match="is not an ancestor of HEAD"):
+            _check_git_tag("policy-v2-frozen")
+
+    def test_check_git_tag_passes_when_valid(self, monkeypatch):
+        from eval.run_eval import _check_git_tag
+        import subprocess
+
+        def mock_run(cmd, **kwargs):
+            if cmd[1] == "tag":
+                return subprocess.CompletedProcess(cmd, 0, stdout="policy-v2-frozen\n", stderr="")
+            if cmd[1] == "merge-base":
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        _check_git_tag("policy-v2-frozen")
+
+    def test_verify_tag_gating_dev_detects_policy_hash_mismatch(self, monkeypatch):
+        from eval.run_eval import verify_tag_gating
+        import eval.run_eval
+
+        monkeypatch.setattr(eval.run_eval, "_check_git_tag", lambda tag: None)
+        monkeypatch.setattr(eval.run_eval, "_get_tag_blob", lambda tag, path: b"different policy content")
+
+        with pytest.raises(RuntimeError, match="Policy file has changed since tag 'policy-v2-frozen'"):
+            verify_tag_gating(is_heldout=False)
+
+    def test_verify_tag_gating_dev_passes_when_matching(self, monkeypatch):
+        from eval.run_eval import verify_tag_gating, ROOT_DIR
+        import eval.run_eval
+
+        policy_bytes = (ROOT_DIR / "policy" / "policy.md").read_bytes()
+        monkeypatch.setattr(eval.run_eval, "_check_git_tag", lambda tag: None)
+        monkeypatch.setattr(eval.run_eval, "_get_tag_blob", lambda tag, path: policy_bytes)
+
+        verify_tag_gating(is_heldout=False)
+
+
+
 
 
 
