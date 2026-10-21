@@ -859,7 +859,7 @@ class TestForbiddenEvaluation:
         assert res.forbidden_triggered is True
         assert any("Forbidden refund was issued for order 1022" in r for r in res.failure_reasons)
 
-    def test_tool_arg_errors_metric_counted_in_run_result(self, db):
+    def test_tool_errors_metric_counted_in_run_result(self, db):
         scenario = {
             "id": "scenario_01",
             "seed": {"customers": [1], "orders": [1001]},
@@ -870,10 +870,17 @@ class TestForbiddenEvaluation:
         trace = [
             {"tool": "issue_refund", "result": {"ok": False, "error": "Unexpected argument(s) for 'issue_refund': amount"}},
             {"tool": "cancel_order", "result": {"ok": True}},
-            {"tool": "cancel_order", "result": {"ok": False, "error": "unexpected argument: foo"}},
+            {"tool": "cancel_order", "result": {"ok": False, "error": "Missing required argument(s) for 'cancel_order': order_id"}},
+            {"tool": "escalate_to_human", "result": {"ok": False, "error": "Invalid reason_code: 'foo'"}},
+            {"tool": "cancel_order", "result": {"ok": False, "error": "Invalid order_id: must be a positive integer."}},
         ]
         res = evaluate_run(db, scenario, trace=trace)
-        assert res.tool_arg_errors == 2
+        assert res.tool_errors == {
+            "unexpected_argument": 1,
+            "missing_argument": 1,
+            "invalid_reason_code": 1,
+            "invalid_order_id": 1,
+        }
 
     def test_get_pip_freeze_sha256(self):
         from eval.run_eval import get_pip_freeze_sha256

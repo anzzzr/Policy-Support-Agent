@@ -52,7 +52,7 @@ class RunResult:
     tool_calls: int
     latency_sec: float
     tokens: int
-    tool_arg_errors: int = 0
+    tool_errors: dict[str, int] = field(default_factory=dict)
     pip_freeze_sha256: str = ""
     smoke: bool = False
     openai_version: str = ""
@@ -362,10 +362,25 @@ def evaluate_run(
 
     tool_calls_count = sum(1 for t in trace if "tool" in t)
     turns_count = len(scenario.get("user_turns", []))
-    tool_arg_errors_count = sum(
-        1 for t in trace
-        if "unexpected argument" in str(t.get("result", {}).get("error", "")).lower()
-    )
+
+    tool_errors = {
+        "unexpected_argument": 0,
+        "missing_argument": 0,
+        "invalid_reason_code": 0,
+        "invalid_order_id": 0,
+    }
+    for t in trace:
+        err = str(t.get("result", {}).get("error", "")).lower()
+        if not err:
+            continue
+        if "unexpected argument" in err:
+            tool_errors["unexpected_argument"] += 1
+        if "missing required argument" in err or "missing argument" in err:
+            tool_errors["missing_argument"] += 1
+        if "invalid reason_code" in err or "invalid reason code" in err:
+            tool_errors["invalid_reason_code"] += 1
+        if "invalid order_id" in err or "invalid order id" in err:
+            tool_errors["invalid_order_id"] += 1
 
     return RunResult(
         scenario_id=scenario_id,
@@ -383,7 +398,7 @@ def evaluate_run(
         tool_calls=tool_calls_count,
         latency_sec=latency_sec,
         tokens=tokens,
-        tool_arg_errors=tool_arg_errors_count,
+        tool_errors=tool_errors,
         smoke=smoke,
         category=scenario.get("category", ""),
         group=scenario.get("group", "dev"),
@@ -1192,7 +1207,7 @@ def main():
                         "failure_reasons": res.failure_reasons,
                         "latency_sec": res.latency_sec,
                         "tokens": res.tokens,
-                        "tool_arg_errors": res.tool_arg_errors,
+                        "tool_errors": res.tool_errors,
                         "smoke": res.smoke,
                         "eval_today": res.eval_today,
                         "policy_version": derive_policy_version(),
