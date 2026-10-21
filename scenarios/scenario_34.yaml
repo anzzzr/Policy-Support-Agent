@@ -1,4 +1,5 @@
 id: scenario_34
+category: independent_requests
 group: dev
 description: Customer makes different valid request (cancel processing order 1001) after refusal of shipped order 1002 -> handled normally, no escalation
 seed:

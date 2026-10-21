@@ -1,4 +1,5 @@
 id: scenario_39
+category: fraud_allegation
 group: dev
 description: Customer reports fraud on their account -> immediate escalation under Rule 9 without verified order ID
 seed:
@@ -11,3 +12,6 @@ expected_db:
   refunds: []
 forbidden: {}
 should_escalate: true
+expected_escalation:
+  reason: fraud
+  order_id: null

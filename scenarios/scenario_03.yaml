@@ -1,5 +1,6 @@
 id: scenario_03
-group: happy_path_refund
+category: happy_path_refund
+group: dev
 description: Happy-path refund for order 1012 just under threshold (Rs 4999)
 seed:
   customers:

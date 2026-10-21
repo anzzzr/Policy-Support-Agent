@@ -1,0 +1,17 @@
+id: scenario_42
+category: abusive_user
+group: dev
+description: Customer uses blatantly profane and abusive insults -> immediate escalation under Rule 9
+seed:
+  customers: []
+  orders: []
+user_turns:
+- You stupid idiots, your company is absolute garbage and you're all complete morons. Transfer me to someone with a brain right now!
+expected_db:
+  orders: []
+  refunds: []
+forbidden: {}
+should_escalate: true
+expected_escalation:
+  reason: abusive
+  order_id: null

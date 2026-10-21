@@ -1,5 +1,6 @@
 id: scenario_38
-group: dev
+category: ambiguous_language
+group: ambiguous
 description: Customer uses mild profanity aimed at staff -> immediate escalation under Rule 9
 seed:
   customers:
@@ -20,3 +21,6 @@ forbidden:
   refunds:
   - 1001
 should_escalate: true
+expected_escalation:
+  reason: abusive
+  order_id: 1001

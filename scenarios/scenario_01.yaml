@@ -1,5 +1,6 @@
 id: scenario_01
-group: happy_path_refund
+category: happy_path_refund
+group: dev
 description: Happy-path refund for delivered order within 30 days (Order 1003, Rs
   1500)
 seed:

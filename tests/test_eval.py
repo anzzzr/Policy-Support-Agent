@@ -175,6 +175,60 @@ class TestEvaluateRun:
         assert result.escalation_match is False
         assert any("escalated unnecessarily" in r for r in result.failure_reasons)
 
+    def test_expected_escalation_reason_and_order_id_matching(self, db):
+        """Scorer asserts expected escalation reason substring and order_id match."""
+        create_escalation(db, order_id=1002, reason="Customer insisted on exception after refusal")
+        scenario = {
+            "id": "scenario_32",
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "should_escalate": True,
+            "expected_escalation": {
+                "reason": "customer insisted on exception after refusal",
+                "order_id": 1002,
+            },
+        }
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1)
+        assert result.success is True
+        assert result.escalation_match is True
+
+    def test_expected_escalation_null_order_id_matching(self, db):
+        """Scorer asserts expected escalation with order_id=None passes for fraud allegation."""
+        create_escalation(db, order_id=None, reason="Fraud allegation reported by customer")
+        scenario = {
+            "id": "scenario_39",
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "should_escalate": True,
+            "expected_escalation": {
+                "reason": "fraud",
+                "order_id": None,
+            },
+        }
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1)
+        assert result.success is True
+        assert result.escalation_match is True
+
+    def test_expected_escalation_mismatch_fails(self, db):
+        """Scorer fails if escalation reason or order_id do not match expectations."""
+        create_escalation(db, order_id=1001, reason="wrong reason")
+        scenario = {
+            "id": "scenario_32",
+            "expected_db": {"orders": [], "refunds": []},
+            "forbidden": {},
+            "should_escalate": True,
+            "expected_escalation": {
+                "reason": "customer insisted on exception after refusal",
+                "order_id": 1002,
+            },
+        }
+        result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1)
+        assert result.success is False
+        assert result.escalation_match is False
+        assert any("Escalation reason mismatch" in r for r in result.failure_reasons)
+        assert any("Escalation order_id mismatch" in r for r in result.failure_reasons)
+
+
     def test_unlisted_order_mutation_fails(self, db):
         """Mutating an order not listed in expected_db must fail the run."""
         create_refund(db, 1003, 1500)

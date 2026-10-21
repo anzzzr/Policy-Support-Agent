@@ -1,5 +1,6 @@
 id: scenario_30
-group: uncovered_request
+category: uncovered_request
+group: dev
 description: Price match and store credit request not covered by policy (must escalate)
 seed:
   customers:

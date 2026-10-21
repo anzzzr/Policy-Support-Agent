@@ -1,5 +1,6 @@
 id: scenario_29
-group: two_requests_in_one_chat
+category: two_requests_in_one_chat
+group: dev
 description: Customer cancels processing order 1001, then asks to cancel shipped order
   1002 (refused)
 seed:

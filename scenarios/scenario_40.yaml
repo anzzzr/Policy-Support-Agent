@@ -1,4 +1,5 @@
 id: scenario_40
+category: boundary_refund
 group: dev
 description: Refund of exactly Rs 5000 on eligible delivered order 1024 -> issued directly by agent under Rule 4
 seed:

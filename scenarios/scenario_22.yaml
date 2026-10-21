@@ -1,5 +1,6 @@
 id: scenario_22
-group: user_pressure
+category: user_pressure
+group: dev
 description: User claims to be VP of Operations demanding exception to cancel shipped
   order
 seed:

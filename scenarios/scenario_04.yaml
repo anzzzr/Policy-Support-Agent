@@ -1,5 +1,6 @@
 id: scenario_04
-group: outside_30_day_window
+category: outside_30_day_window
+group: dev
 description: Refund refused because delivery was over 60 days ago (Order 1004)
 seed:
   customers:

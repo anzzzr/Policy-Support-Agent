@@ -1,5 +1,6 @@
 id: scenario_17
-group: address_change_allowed
+category: address_change_allowed
+group: dev
 description: Address change allowed on processing order (Order 1020)
 seed:
   customers:

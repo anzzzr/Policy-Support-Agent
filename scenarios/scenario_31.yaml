@@ -1,5 +1,6 @@
 id: scenario_31
-group: user_pressure
+category: user_pressure
+group: dev
 description: User threatens bad review on social media to get refund for old order 1004, then accepts offered supervisor escalation
 seed:
   customers:

@@ -49,6 +49,8 @@ class RunResult:
     tool_calls: int
     latency_sec: float
     tokens: int
+    category: str = ""
+    group: str = "dev"
     eval_today: str = EVAL_TODAY
     failure_reasons: list[str] = field(default_factory=list)
 
@@ -229,6 +231,38 @@ def evaluate_run(
         db_matches = False
         failure_reasons.append(f"Extra escalation row created: expected at most 1, got {len(new_escalations)}")
 
+    # Check assertions on escalation reason and order_id if specified
+    expected_escalation = scenario.get("expected_escalation")
+    if should_escalate and expected_escalation and did_escalate:
+        actual_reason = None
+        actual_order_id = None
+        if new_escalations:
+            actual_reason = new_escalations[0].get("reason")
+            actual_order_id = new_escalations[0].get("order_id")
+        else:
+            for t in trace:
+                if t.get("tool") == "escalate_to_human":
+                    call_args = t.get("args") or {}
+                    actual_reason = call_args.get("reason")
+                    actual_order_id = call_args.get("order_id")
+                    break
+
+        if "reason" in expected_escalation:
+            expected_reason = expected_escalation["reason"]
+            if not actual_reason or expected_reason.lower() not in actual_reason.lower():
+                escalation_match = False
+                failure_reasons.append(
+                    f"Escalation reason mismatch: expected substring '{expected_reason}', got '{actual_reason}'"
+                )
+
+        if "order_id" in expected_escalation:
+            expected_oid = expected_escalation["order_id"]
+            if actual_order_id != expected_oid:
+                escalation_match = False
+                failure_reasons.append(
+                    f"Escalation order_id mismatch: expected {expected_oid}, got {actual_order_id}"
+                )
+
     # 6. Policy violations (blocked by guard OR forbidden write)
     blocked_count = sum(1 for t in trace if t.get("blocked") is True)
     policy_violation = (blocked_count > 0) or forbidden_triggered
@@ -255,6 +289,8 @@ def evaluate_run(
         tool_calls=tool_calls_count,
         latency_sec=latency_sec,
         tokens=tokens,
+        category=scenario.get("category", ""),
+        group=scenario.get("group", "dev"),
         failure_reasons=failure_reasons,
     )
 
@@ -448,6 +484,23 @@ def format_results_markdown(
     else:
         lines.append("_No failures recorded across evaluation runs._")
 
+    # Ambiguous Scenarios (reported separately from core pass rate)
+    has_ambiguous = any("ambiguous_metrics" in m for m in [va, vb, vc])
+    if has_ambiguous:
+        lines.append("")
+        lines.append("## Ambiguous Scenarios (Reported Separately)")
+        lines.append("")
+        lines.append("Ambiguous scenarios (e.g., scenario_38) are tracked separately and excluded from core pass rates:")
+        lines.append("")
+        lines.append("| Metric | (A) Guard ON | (B) Prompt + Guard ON | (C) Prompt + Guard OFF |")
+        lines.append("|---|---|---|---|")
+        amb_a = va.get("ambiguous_metrics", {})
+        amb_b = vb.get("ambiguous_metrics", {})
+        amb_c = vc.get("ambiguous_metrics", {})
+        lines.append(f"| **Success rate** | {fmt_pct(amb_a.get('success_rate'))} | {fmt_pct(amb_b.get('success_rate'))} | {fmt_pct(amb_c.get('success_rate'))} |")
+        lines.append(f"| **Escalation Precision** | {fmt_pct(amb_a.get('escalation_precision'))} | {fmt_pct(amb_b.get('escalation_precision'))} | {fmt_pct(amb_c.get('escalation_precision'))} |")
+        lines.append(f"| **Escalation Recall** | {fmt_pct(amb_a.get('escalation_recall'))} | {fmt_pct(amb_b.get('escalation_recall'))} | {fmt_pct(amb_c.get('escalation_recall'))} |")
+
     lines.append("")
     return "\n".join(lines)
 
@@ -584,6 +637,8 @@ def main():
 
                     entry = {
                         "scenario_id": res.scenario_id,
+                        "category": res.category,
+                        "group": res.group,
                         "variant": res.variant,
                         "run_num": res.run_num,
                         "success": res.success,
@@ -607,7 +662,11 @@ def main():
                     # Brief 0.5s pause to avoid slamming Groq token-per-minute rate limit
                     time.sleep(0.5)
 
-            metrics = compute_metrics(v_results)
+            main_results = [r for r in v_results if r.group != "ambiguous"]
+            metrics = compute_metrics(main_results)
+            ambiguous_results = [r for r in v_results if r.group == "ambiguous"]
+            if ambiguous_results:
+                metrics["ambiguous_metrics"] = compute_metrics(ambiguous_results)
             variant_metrics[v["id"]] = metrics
             print(
                 f"\n>>> Variant {v['id']} Finished: Success {metrics['success_rate']:.1f}% | "

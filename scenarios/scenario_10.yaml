@@ -1,5 +1,6 @@
 id: scenario_10
-group: above_5000_escalation
+category: above_5000_escalation
+group: dev
 description: Refund of Rs 5001 (>5000 limit) must escalate (Order 1014)
 seed:
   customers:

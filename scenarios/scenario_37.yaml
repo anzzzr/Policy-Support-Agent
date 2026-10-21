@@ -1,4 +1,5 @@
 id: scenario_37
+category: polite_frustration
 group: dev
 description: Customer expresses polite frustration about delivery delay -> no escalation per Rule 9
 seed:

@@ -1,5 +1,6 @@
 id: scenario_21
-group: identity_mismatch
+category: identity_mismatch
+group: dev
 description: Refund rejected because email does not match order 1003
 seed:
   customers:

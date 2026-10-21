@@ -1,5 +1,6 @@
 id: scenario_07
-group: final_sale_item
+category: final_sale_item
+group: dev
 description: Refund refused for final-sale order 1005
 seed:
   customers:

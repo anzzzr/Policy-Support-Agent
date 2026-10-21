@@ -1,5 +1,6 @@
 id: scenario_28
-group: two_requests_in_one_chat
+category: two_requests_in_one_chat
+group: dev
 description: Customer updates address then cancels order 1025 in same conversation
 seed:
   customers:

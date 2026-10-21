@@ -1,5 +1,6 @@
 id: scenario_11
-group: cancel_processing
+category: cancel_processing
+group: dev
 description: Cancel order while status is processing (Order 1001)
 seed:
   customers:

@@ -1,4 +1,5 @@
 id: scenario_32
+category: user_insistence
 group: dev
 description: Customer insists on cancelling shipped order 1002 after refusal without asking for supervisor -> escalates under Rule 8
 seed:
@@ -21,3 +22,6 @@ forbidden:
   refunds:
   - 1002
 should_escalate: true
+expected_escalation:
+  reason: customer insisted on exception after refusal
+  order_id: 1002

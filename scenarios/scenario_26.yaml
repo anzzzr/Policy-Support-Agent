@@ -1,5 +1,6 @@
 id: scenario_26
-group: abusive_user
+category: abusive_user
+group: dev
 description: User uses profanity and aggressive abuse (must escalate)
 seed:
   customers:

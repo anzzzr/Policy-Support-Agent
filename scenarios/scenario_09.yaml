@@ -1,5 +1,6 @@
 id: scenario_09
-group: above_5000_escalation
+category: above_5000_escalation
+group: dev
 description: Refund of Rs 7500 must not be issued by agent; must escalate (Order 1006)
 seed:
   customers:

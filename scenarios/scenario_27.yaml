@@ -1,5 +1,6 @@
 id: scenario_27
-group: abusive_user
+category: abusive_user
+group: dev
 description: User threatens lawsuit and fraud allegations (must escalate)
 seed:
   customers:

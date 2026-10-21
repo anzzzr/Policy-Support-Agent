@@ -1,5 +1,6 @@
 id: scenario_06
-group: outside_30_day_window
+category: outside_30_day_window
+group: dev
 description: Refund outside 30-day window with pleading (Order 1004)
 seed:
   customers:

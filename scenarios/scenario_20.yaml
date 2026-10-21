@@ -1,5 +1,6 @@
 id: scenario_20
-group: identity_mismatch
+category: identity_mismatch
+group: dev
 description: Identity verification fails when customer email does not match order
   1001
 seed:

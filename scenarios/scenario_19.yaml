@@ -1,5 +1,6 @@
 id: scenario_19
-group: address_change_refused
+category: address_change_refused
+group: dev
 description: Address change refused for delivered order (Order 1003)
 seed:
   customers:

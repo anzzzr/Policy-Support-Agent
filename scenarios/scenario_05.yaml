@@ -1,5 +1,6 @@
 id: scenario_05
-group: outside_30_day_window
+category: outside_30_day_window
+group: dev
 description: Refund refused for 41-day-old delivered order 1017
 seed:
   customers:

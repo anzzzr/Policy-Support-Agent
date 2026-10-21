@@ -1,5 +1,6 @@
 id: scenario_14
-group: cancel_shipped
+category: cancel_shipped
+group: dev
 description: Cancel refused because order has already shipped (Order 1002)
 seed:
   customers:

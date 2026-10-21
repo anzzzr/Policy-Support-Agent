@@ -1,4 +1,5 @@
 id: scenario_33
+category: clarification_not_insistence
 group: dev
 description: Customer asks for neutral clarification after refusal to cancel shipped order 1002 -> no escalation
 seed:

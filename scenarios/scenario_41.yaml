@@ -1,4 +1,5 @@
 id: scenario_41
+category: out_of_scope_inquiry
 group: dev
 description: Customer requests partial refund on delivered order 1003 -> refused per Rule 4 (full order total only)
 seed:
