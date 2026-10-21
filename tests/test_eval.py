@@ -898,9 +898,15 @@ class TestForbiddenEvaluation:
 
     def test_get_pip_freeze_sha256(self):
         from eval.run_eval import get_pip_freeze_sha256
+        import subprocess, hashlib, sys
+
         h = get_pip_freeze_sha256()
         assert isinstance(h, str)
         assert len(h) == 64
+
+        proc = subprocess.run([sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True, check=True)
+        expected = hashlib.sha256(proc.stdout.encode("utf-8")).hexdigest()
+        assert h == expected
 
 
 class TestTagGating:

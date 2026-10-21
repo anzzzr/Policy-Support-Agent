@@ -902,7 +902,11 @@ def get_harness_hashes() -> dict[str, str]:
 
 
 def get_pip_freeze_sha256() -> str:
-    """Return SHA-256 hex digest of sorted pip freeze output."""
+    """Return SHA-256 hex digest of raw $(python -m pip freeze) stdout.
+
+    Computes SHA-256 directly on the exact bytes produced by `python -m pip freeze`,
+    making it 100% reproducible and identical to running `python -m pip freeze | sha256sum` in the shell.
+    """
     try:
         proc = subprocess.run(
             [sys.executable, "-m", "pip", "freeze"],
@@ -910,9 +914,7 @@ def get_pip_freeze_sha256() -> str:
             text=True,
             check=True,
         )
-        sorted_lines = sorted(proc.stdout.strip().splitlines())
-        content = "\n".join(sorted_lines).encode("utf-8")
-        return hashlib.sha256(content).hexdigest()
+        return hashlib.sha256(proc.stdout.encode("utf-8")).hexdigest()
     except Exception:
         return ""
 
