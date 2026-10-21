@@ -1,4 +1,4 @@
-.PHONY: test chat eval publish-results validate-scenarios
+.PHONY: test chat eval publish-results validate-scenarios manifest
 
 PYTHON ?= python3
 
@@ -30,5 +30,9 @@ publish-results:
 
 validate-scenarios:
 	PYTHONPATH=. $(PYTHON) eval/validate_scenarios.py
+
+manifest:
+	@$(PYTHON) -c 'import hashlib, pathlib; p = pathlib.Path("scenarios"); files = sorted(p.glob("*.yaml")); lines = [f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.name}\n" for f in files]; (p / "MANIFEST.sha256").write_text("".join(lines)); print(f"Generated scenarios/MANIFEST.sha256 with {len(lines)} files.")'
+
 
 
