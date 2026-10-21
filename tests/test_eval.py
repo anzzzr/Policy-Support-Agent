@@ -796,4 +796,29 @@ class TestValidateScenarios:
         assert any("forbidden_reply_terms" in e for e in errs)
 
 
+class TestScenarioManifest:
+    def test_scenario_manifest_integrity(self):
+        import hashlib
+        manifest_path = Path(__file__).resolve().parent.parent / "scenarios" / "MANIFEST.sha256"
+        assert manifest_path.exists(), "scenarios/MANIFEST.sha256 does not exist"
+        scenarios_dir = manifest_path.parent
+
+        manifest_lines = manifest_path.read_text().strip().splitlines()
+        assert len(manifest_lines) > 0, "MANIFEST.sha256 is empty"
+
+        for line in manifest_lines:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(maxsplit=1)
+            assert len(parts) == 2, f"Invalid manifest line: {line}"
+            expected_hash, fname = parts
+            target_file = scenarios_dir / fname
+            assert target_file.exists(), f"Scenario file {fname} listed in manifest not found"
+            content = target_file.read_bytes()
+            actual_hash = hashlib.sha256(content).hexdigest()
+            assert actual_hash == expected_hash, f"Hash mismatch for {fname}: expected {expected_hash}, got {actual_hash}"
+
+
+
 
