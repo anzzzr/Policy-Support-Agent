@@ -119,6 +119,13 @@ class TestGuardOffDomainInvariants:
     def disable_guard(self, monkeypatch):
         monkeypatch.setenv("GUARD", "off")
 
+    def test_meta_guard_is_off_inside_class(self):
+        """Meta-test asserting GUARD is strictly disabled inside TestGuardOffDomainInvariants."""
+        import os
+        from app.tools import _guard_enabled
+        assert os.environ.get("GUARD") == "off"
+        assert _guard_enabled() is False
+
     def test_guard_off_rejects_nan_amount(self, conn):
         count_before = conn.execute("SELECT count(*) as c FROM refunds").fetchone()["c"]
         res = issue_refund(conn, 1024, float("nan"), _today=EVAL_DATE)
