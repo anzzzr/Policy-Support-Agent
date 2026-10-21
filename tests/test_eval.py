@@ -1007,6 +1007,43 @@ class TestSmokeFlag:
         assert v != "unknown"
 
 
+class TestRequirementsLock:
+    def test_verify_requirements_lock_detects_mismatch(self, monkeypatch):
+        from eval.run_eval import verify_requirements_lock
+        import importlib.metadata
+
+        class MockDist:
+            def __init__(self, name, version):
+                self.metadata = {"Name": name}
+                self.version = version
+
+        mock_dists = [MockDist("openai", "0.0.1")]
+        monkeypatch.setattr(importlib.metadata, "distributions", lambda: mock_dists)
+
+        with pytest.raises(RuntimeError, match="Installed packages do not match requirements.lock"):
+            verify_requirements_lock()
+
+    def test_verify_requirements_lock_passes_when_matching(self, monkeypatch):
+        from eval.run_eval import verify_requirements_lock, ROOT_DIR
+        import importlib.metadata
+
+        class MockDist:
+            def __init__(self, name, version):
+                self.metadata = {"Name": name}
+                self.version = version
+
+        lock_path = ROOT_DIR / "requirements.lock"
+        dists = []
+        for line in lock_path.read_text().splitlines():
+            if "==" in line:
+                pkg, ver = line.strip().split("==", 1)
+                dists.append(MockDist(pkg, ver))
+
+        monkeypatch.setattr(importlib.metadata, "distributions", lambda: dists)
+        verify_requirements_lock()  # should not raise
+
+
+
 
 
 

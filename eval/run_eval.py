@@ -7,6 +7,7 @@ Quality is measured by the FINAL DATABASE STATE, not how the chat sounds.
 import hashlib
 import json
 import os
+import platform
 import re
 import sqlite3
 import subprocess
@@ -56,6 +57,8 @@ class RunResult:
     pip_freeze_sha256: str = ""
     smoke: bool = False
     openai_version: str = ""
+    sys_executable: str = ""
+    python_version: str = ""
     category: str = ""
     group: str = "dev"
     eval_today: str = EVAL_TODAY
@@ -815,6 +818,57 @@ def get_openai_version() -> str:
         return "unknown"
 
 
+def verify_requirements_lock() -> None:
+    """Refuse to run unless installed package versions match requirements.lock exactly."""
+    lock_file = ROOT_DIR / "requirements.lock"
+    if not lock_file.exists():
+        raise RuntimeError(f"requirements.lock not found at {lock_file}")
+
+    expected: dict[str, str] = {}
+    for line in lock_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "==" in line:
+            pkg, ver = line.split("==", 1)
+            expected[pkg.strip().lower().replace("_", "-")] = ver.strip()
+
+    try:
+        from importlib.metadata import distributions
+        installed = {
+            dist.metadata["Name"].lower().replace("_", "-"): dist.version
+            for dist in distributions()
+            if dist.metadata and dist.metadata.get("Name")
+        }
+    except Exception:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pip", "freeze"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        installed = {}
+        for line in proc.stdout.splitlines():
+            if "==" in line:
+                pkg, ver = line.strip().split("==", 1)
+                installed[pkg.lower().replace("_", "-")] = ver.strip()
+
+    mismatches = []
+    for pkg, exp_ver in sorted(expected.items()):
+        inst_ver = installed.get(pkg)
+        if inst_ver is None:
+            mismatches.append(f"Missing package '{pkg}' (expected =={exp_ver})")
+        elif inst_ver != exp_ver:
+            mismatches.append(f"Package '{pkg}': expected =={exp_ver}, installed {inst_ver}")
+
+    if mismatches:
+        raise RuntimeError(
+            "Installed packages do not match requirements.lock:\n  "
+            + "\n  ".join(mismatches)
+            + "\nRefusing to run. Please install from requirements.lock:\n  pip install -r requirements.lock"
+        )
+
+
 def get_git_info() -> tuple[str, bool]:
     """Retrieve current commit hash and whether the working tree is dirty."""
     try:
@@ -1013,6 +1067,12 @@ def main():
             "        Commit or stash all changes before running evaluation for reproducibility,\n"
             "        or pass --allow-dirty to override.\n"
         )
+        sys.exit(1)
+
+    try:
+        verify_requirements_lock()
+    except RuntimeError as err:
+        print(f"\n[ERROR] Environment validation failure:\n{err}\n")
         sys.exit(1)
 
     if cli_args.smoke is None:
@@ -1218,6 +1278,8 @@ def main():
                         "pip_freeze_sha256": pip_freeze_hash,
                         "openai_version": openai_version,
                         "openai_client_version": openai_version,
+                        "sys_executable": sys.executable,
+                        "python_version": platform.python_version(),
                         "model": current_fingerprint["model"],
                         "temperature": current_fingerprint["temperature"],
                         "max_rounds": current_fingerprint["max_rounds"],
