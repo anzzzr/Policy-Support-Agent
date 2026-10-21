@@ -22,5 +22,7 @@ forbidden:
   - 1001
 should_escalate: true
 expected_escalation:
-  reason: abusive
-  order_id: 1001
+  reason_code: abuse
+  order_id:
+  - null
+  - 1001

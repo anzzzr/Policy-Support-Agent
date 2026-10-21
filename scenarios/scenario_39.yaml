@@ -13,5 +13,5 @@ expected_db:
 forbidden: {}
 should_escalate: true
 expected_escalation:
-  reason: fraud
+  reason_code: legal_or_fraud
   order_id: null

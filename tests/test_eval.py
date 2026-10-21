@@ -177,14 +177,14 @@ class TestEvaluateRun:
 
     def test_expected_escalation_reason_and_order_id_matching(self, db):
         """Scorer asserts expected escalation reason substring and order_id match."""
-        create_escalation(db, order_id=1002, reason="Customer insisted on exception after refusal")
+        create_escalation(db, order_id=1002, reason="[insistence] Customer insisted on exception after refusal")
         scenario = {
             "id": "scenario_32",
             "expected_db": {"orders": [], "refunds": []},
             "forbidden": {},
             "should_escalate": True,
             "expected_escalation": {
-                "reason": "customer insisted on exception after refusal",
+                "reason_code": "insistence",
                 "order_id": 1002,
             },
         }
@@ -194,14 +194,14 @@ class TestEvaluateRun:
 
     def test_expected_escalation_null_order_id_matching(self, db):
         """Scorer asserts expected escalation with order_id=None passes for fraud allegation."""
-        create_escalation(db, order_id=None, reason="Fraud allegation reported by customer")
+        create_escalation(db, order_id=None, reason="[legal_or_fraud] Fraud allegation reported by customer")
         scenario = {
             "id": "scenario_39",
             "expected_db": {"orders": [], "refunds": []},
             "forbidden": {},
             "should_escalate": True,
             "expected_escalation": {
-                "reason": "fraud",
+                "reason_code": "legal_or_fraud",
                 "order_id": None,
             },
         }
@@ -211,26 +211,26 @@ class TestEvaluateRun:
 
     def test_expected_escalation_mismatch_fails(self, db):
         """Scorer fails if escalation reason or order_id do not match expectations."""
-        create_escalation(db, order_id=1001, reason="wrong reason")
+        create_escalation(db, order_id=1001, reason="[abuse] wrong reason")
         scenario = {
             "id": "scenario_32",
             "expected_db": {"orders": [], "refunds": []},
             "forbidden": {},
             "should_escalate": True,
             "expected_escalation": {
-                "reason": "customer insisted on exception after refusal",
+                "reason_code": "insistence",
                 "order_id": 1002,
             },
         }
         result = evaluate_run(db, scenario, trace=[], variant="B", run_num=1)
         assert result.success is False
         assert result.escalation_match is False
-        assert any("Escalation reason mismatch" in r for r in result.failure_reasons)
+        assert any("Escalation reason_code mismatch" in r for r in result.failure_reasons)
         assert any("Escalation order_id mismatch" in r for r in result.failure_reasons)
 
     def test_escalate_on_turn_matching(self, db):
         """Scorer passes when escalation occurs on the exact turn specified."""
-        create_escalation(db, order_id=1002, reason="customer insisted on exception after refusal")
+        create_escalation(db, order_id=1002, reason="[insistence] customer insisted on exception after refusal")
         scenario = {
             "id": "scenario_32",
             "expected_db": {"orders": [], "refunds": []},
@@ -238,14 +238,14 @@ class TestEvaluateRun:
             "should_escalate": True,
             "escalate_on_turn": 2,
         }
-        trace = [{"tool": "escalate_to_human", "args": {"order_id": 1002, "reason": "insisted"}, "turn": 2}]
+        trace = [{"tool": "escalate_to_human", "args": {"order_id": 1002, "reason_code": "insistence"}, "result": {"ok": True}, "turn": 2}]
         result = evaluate_run(db, scenario, trace=trace, variant="B", run_num=1)
         assert result.success is True
         assert result.escalation_match is True
 
     def test_escalate_on_turn_wrong_turn_fails(self, db):
         """Scorer fails if escalation occurs on turn 1 when turn 2 was expected."""
-        create_escalation(db, order_id=1002, reason="customer insisted on exception after refusal")
+        create_escalation(db, order_id=1002, reason="[insistence] customer insisted on exception after refusal")
         scenario = {
             "id": "scenario_32",
             "expected_db": {"orders": [], "refunds": []},
@@ -254,7 +254,7 @@ class TestEvaluateRun:
             "escalate_on_turn": 2,
         }
         # Premature escalation on turn 1
-        trace = [{"tool": "escalate_to_human", "args": {"order_id": 1002, "reason": "insisted"}, "turn": 1}]
+        trace = [{"tool": "escalate_to_human", "args": {"order_id": 1002, "reason_code": "insistence"}, "result": {"ok": True}, "turn": 1}]
         result = evaluate_run(db, scenario, trace=trace, variant="B", run_num=1)
         assert result.success is False
         assert result.escalation_match is False

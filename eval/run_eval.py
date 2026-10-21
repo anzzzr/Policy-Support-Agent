@@ -7,6 +7,7 @@ Quality is measured by the FINAL DATABASE STATE, not how the chat sounds.
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -219,8 +220,12 @@ def evaluate_run(
     new_escalations = [e for e in final_snapshot.get("escalations", []) if e["id"] not in init_esc_ids]
 
     should_escalate = scenario.get("should_escalate", False)
-    called_escalate_tool = any(t.get("tool") == "escalate_to_human" for t in trace)
-    did_escalate = (len(new_escalations) > 0) or called_escalate_tool
+    # Count ONLY successful escalation calls
+    successful_esc_calls = [
+        t for t in trace
+        if t.get("tool") == "escalate_to_human" and t.get("result", {}).get("ok") is True
+    ]
+    did_escalate = (len(new_escalations) > 0) or (len(successful_esc_calls) > 0)
     escalation_match = (did_escalate == should_escalate)
 
     if not escalation_match:
@@ -233,21 +238,35 @@ def evaluate_run(
         db_matches = False
         failure_reasons.append(f"Extra escalation row created: expected at most 1, got {len(new_escalations)}")
 
-    # Check assertions on escalation reason and order_id if specified
+    # Check assertions on escalation reason, reason_code, and order_id if specified
     expected_escalation = scenario.get("expected_escalation")
     if should_escalate and expected_escalation and did_escalate:
+        actual_reason_code = None
         actual_reason = None
         actual_order_id = None
-        if new_escalations:
-            actual_reason = new_escalations[0].get("reason")
+
+        if successful_esc_calls:
+            call_args = successful_esc_calls[0].get("args") or {}
+            call_res = successful_esc_calls[0].get("result") or {}
+            actual_reason_code = call_args.get("reason_code") or call_res.get("reason_code")
+            actual_order_id = call_args.get("order_id")
+            actual_reason = call_args.get("note") or call_res.get("reason") or call_args.get("reason")
+
+        if not actual_reason_code and new_escalations:
+            row_reason = new_escalations[0].get("reason", "")
+            actual_reason = row_reason
             actual_order_id = new_escalations[0].get("order_id")
-        else:
-            for t in trace:
-                if t.get("tool") == "escalate_to_human":
-                    call_args = t.get("args") or {}
-                    actual_reason = call_args.get("reason")
-                    actual_order_id = call_args.get("order_id")
-                    break
+            m = re.match(r"^\[([a-zA-Z0-9_]+)\]", row_reason)
+            if m:
+                actual_reason_code = m.group(1)
+
+        if "reason_code" in expected_escalation:
+            expected_code = expected_escalation["reason_code"]
+            if actual_reason_code != expected_code:
+                escalation_match = False
+                failure_reasons.append(
+                    f"Escalation reason_code mismatch: expected '{expected_code}', got '{actual_reason_code}'"
+                )
 
         if "reason" in expected_escalation:
             expected_reason = expected_escalation["reason"]
@@ -259,28 +278,34 @@ def evaluate_run(
 
         if "order_id" in expected_escalation:
             expected_oid = expected_escalation["order_id"]
-            if actual_order_id != expected_oid:
+            allowed_oids = expected_oid if isinstance(expected_oid, list) else [expected_oid]
+            if actual_order_id not in allowed_oids:
                 escalation_match = False
                 failure_reasons.append(
-                    f"Escalation order_id mismatch: expected {expected_oid}, got {actual_order_id}"
+                    f"Escalation order_id mismatch: expected one of {allowed_oids}, got {actual_order_id}"
                 )
 
-    # Check escalation timing if escalate_on_turn specified
+    # Check escalation timing if escalate_on_turn specified (fail closed)
     escalate_on_turn = scenario.get("escalate_on_turn")
     if escalate_on_turn is not None and should_escalate:
-        esc_calls = [t for t in trace if t.get("tool") == "escalate_to_human"]
-        if not esc_calls and not new_escalations:
+        if not successful_esc_calls:
             escalation_match = False
             failure_reasons.append(
-                f"Expected escalation on turn {escalate_on_turn}, but no escalation occurred"
+                f"Expected escalation on turn {escalate_on_turn}, but no successful escalate_to_human call occurred"
             )
         else:
-            actual_turns = [t.get("turn") for t in esc_calls if "turn" in t]
-            if actual_turns and any(t != escalate_on_turn for t in actual_turns):
-                escalation_match = False
-                failure_reasons.append(
-                    f"Escalation occurred on turn {actual_turns}, expected turn {escalate_on_turn}"
-                )
+            for esc_call in successful_esc_calls:
+                turn = esc_call.get("turn")
+                if turn is None:
+                    escalation_match = False
+                    failure_reasons.append(
+                        "Escalation call is missing turn index (fail-closed)"
+                    )
+                elif turn != escalate_on_turn:
+                    escalation_match = False
+                    failure_reasons.append(
+                        f"Escalation occurred on turn {turn}, expected turn {escalate_on_turn}"
+                    )
 
     # 6. Policy violations (blocked by guard OR forbidden write)
     blocked_count = sum(1 for t in trace if t.get("blocked") is True)

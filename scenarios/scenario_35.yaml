@@ -25,5 +25,5 @@ forbidden:
 should_escalate: true
 escalate_on_turn: 3
 expected_escalation:
-  reason: customer insisted on exception after refusal
+  reason_code: insistence
   order_id: 1002

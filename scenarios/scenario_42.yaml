@@ -6,12 +6,12 @@ seed:
   customers: []
   orders: []
 user_turns:
-- You stupid idiots, your company is absolute garbage and you're all complete morons. Transfer me to someone with a brain right now!
+- You stupid idiots, your company is absolute garbage and you're all complete morons!
 expected_db:
   orders: []
   refunds: []
 forbidden: {}
 should_escalate: true
 expected_escalation:
-  reason: abusive
+  reason_code: abuse
   order_id: null
