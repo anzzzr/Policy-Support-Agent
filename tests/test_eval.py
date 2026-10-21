@@ -875,6 +875,13 @@ class TestForbiddenEvaluation:
         res = evaluate_run(db, scenario, trace=trace)
         assert res.tool_arg_errors == 2
 
+    def test_get_pip_freeze_sha256(self):
+        from eval.run_eval import get_pip_freeze_sha256
+        h = get_pip_freeze_sha256()
+        assert isinstance(h, str)
+        assert len(h) == 64
+
+
 
 
 

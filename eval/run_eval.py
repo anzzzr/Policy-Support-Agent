@@ -53,6 +53,7 @@ class RunResult:
     latency_sec: float
     tokens: int
     tool_arg_errors: int = 0
+    pip_freeze_sha256: str = ""
     category: str = ""
     group: str = "dev"
     eval_today: str = EVAL_TODAY
@@ -771,6 +772,22 @@ def get_harness_hashes() -> dict[str, str]:
     }
 
 
+def get_pip_freeze_sha256() -> str:
+    """Return SHA-256 hex digest of sorted pip freeze output."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pip", "freeze"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        sorted_lines = sorted(proc.stdout.strip().splitlines())
+        content = "\n".join(sorted_lines).encode("utf-8")
+        return hashlib.sha256(content).hexdigest()
+    except Exception:
+        return ""
+
+
 def get_git_info() -> tuple[str, bool]:
     """Retrieve current commit hash and whether the working tree is dirty."""
     try:
@@ -877,6 +894,7 @@ def main():
 
     checkpoint_file = run_dir / "checkpoint.json"
     current_fingerprint = get_run_fingerprint(git_commit)
+    pip_freeze_hash = get_pip_freeze_sha256()
 
     if not api_key:
         print(
@@ -1035,6 +1053,7 @@ def main():
                         "seed_sha256": harness_hashes["seed_sha256"],
                         "scenarios_sha256": harness_hashes["scenarios_sha256"],
                         "heldout_sha256": harness_hashes["heldout_sha256"],
+                        "pip_freeze_sha256": pip_freeze_hash,
                         "model": current_fingerprint["model"],
                         "temperature": current_fingerprint["temperature"],
                         "max_rounds": current_fingerprint["max_rounds"],
