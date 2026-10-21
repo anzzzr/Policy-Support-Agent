@@ -407,10 +407,9 @@ VALID_REASON_CODES = {
 
 def escalate_to_human(
     conn: sqlite3.Connection,
-    reason_code: str | None = None,
+    reason_code: str,
     note: str = "",
     order_id: int | None = None,
-    reason: str | None = None,
 ) -> dict:
     """Escalate to a human supervisor.  No guard — escalation is always OK."""
     if order_id is not None:
@@ -418,53 +417,23 @@ def escalate_to_human(
         if not valid_id:
             return {"ok": False, "success": False, "error": err_id}
 
-    # Handle legacy positional call: escalate_to_human(conn, "Reason string", ...)
-    if reason_code is not None and reason_code not in VALID_REASON_CODES and reason is None:
-        reason = reason_code
-        reason_code = None
+    if not isinstance(reason_code, str) or not reason_code.strip():
+        return {"ok": False, "success": False, "error": "Reason code cannot be empty."}
 
-    if reason_code is None and reason is not None:
-        cleaned_r = str(reason).strip()
-        if not cleaned_r:
-            return {"ok": False, "success": False, "error": "Reason cannot be empty."}
-        if cleaned_r in VALID_REASON_CODES:
-            reason_code = cleaned_r
-            stored_reason = reason_code
-        else:
-            r_lower = cleaned_r.lower()
-            if "insist" in r_lower:
-                reason_code = "insistence"
-            elif "fraud" in r_lower or "legal" in r_lower:
-                reason_code = "legal_or_fraud"
-            elif "abuse" in r_lower or "profan" in r_lower:
-                reason_code = "abuse"
-            elif "5,000" in r_lower or "5000" in r_lower or "limit" in r_lower:
-                reason_code = "refund_over_limit"
-            elif "customer" in r_lower or "supervisor" in r_lower:
-                reason_code = "customer_request"
-            else:
-                reason_code = "out_of_scope"
-            stored_reason = cleaned_r
-            if not note:
-                note = cleaned_r
-    elif reason_code is not None:
-        if not str(reason_code).strip():
-            return {"ok": False, "success": False, "error": "Reason cannot be empty."}
-        if reason_code not in VALID_REASON_CODES:
-            return {
-                "ok": False,
-                "success": False,
-                "error": f"Invalid reason_code: '{reason_code}'. Must be one of {sorted(VALID_REASON_CODES)}.",
-            }
-        stored_reason = f"[{reason_code}] {note}".strip() if note else f"[{reason_code}]"
-    else:
-        return {"ok": False, "success": False, "error": "Missing required argument: 'reason_code'."}
+    if reason_code not in VALID_REASON_CODES:
+        return {
+            "ok": False,
+            "success": False,
+            "error": f"Invalid reason_code: '{reason_code}'. Must be one of {sorted(VALID_REASON_CODES)}.",
+        }
 
     if not isinstance(note, str):
         note = str(note)
     cleaned_note = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", note).strip()
     if len(cleaned_note) > 500:
         return {"ok": False, "success": False, "error": "Invalid note: exceeds maximum length of 500 characters."}
+
+    stored_reason = f"[{reason_code}] {cleaned_note}".strip() if cleaned_note else f"[{reason_code}]"
 
     esc = db.create_escalation(conn, order_id, stored_reason)
     return {

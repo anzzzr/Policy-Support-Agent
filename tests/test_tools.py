@@ -350,29 +350,33 @@ class TestUpdateAddressGuardOff:
 
 class TestEscalateToHuman:
     def test_with_order(self, db):
-        result = escalate_to_human(db, "Refund above ₹5000", order_id=1006)
+        result = escalate_to_human(db, reason_code="refund_over_limit", note="Refund above ₹5000", order_id=1006)
         assert result["ok"] is True
-        assert result["reason"] == "Refund above ₹5000"
+        assert result["reason_code"] == "refund_over_limit"
+        assert result["reason"] == "[refund_over_limit] Refund above ₹5000"
 
     def test_without_order(self, db):
         """Escalation for abusive language may not have an order."""
-        result = escalate_to_human(db, "Abusive language")
+        result = escalate_to_human(db, reason_code="abuse", note="Abusive language")
         assert result["ok"] is True
-        assert result["reason"] == "Abusive language"
+        assert result["reason_code"] == "abuse"
+        assert result["reason"] == "[abuse] Abusive language"
 
     def test_explicit_null_order_id(self, db):
         """Rule 9: escalations accept explicit null order_id."""
-        result = escalate_to_human(db, "Fraud reported on account", order_id=None)
+        result = escalate_to_human(db, reason_code="legal_or_fraud", note="Fraud reported on account", order_id=None)
         assert result["ok"] is True
-        assert result["reason"] == "Fraud reported on account"
+        assert result["reason_code"] == "legal_or_fraud"
+        assert result["reason"] == "[legal_or_fraud] Fraud reported on account"
         row = db.execute("SELECT * FROM escalations WHERE id = ?", (result["escalation_id"],)).fetchone()
         assert row["order_id"] is None
 
     def test_dispatch_explicit_null_order_id(self, db):
         """dispatch routes escalate_to_human with order_id=None."""
-        result = dispatch(db, "escalate_to_human", {"reason": "Fraud reported on account", "order_id": None})
+        result = dispatch(db, "escalate_to_human", {"reason_code": "legal_or_fraud", "note": "Fraud reported on account", "order_id": None})
         assert result["ok"] is True
-        assert result["reason"] == "Fraud reported on account"
+        assert result["reason_code"] == "legal_or_fraud"
+        assert result["reason"] == "[legal_or_fraud] Fraud reported on account"
 
 
 # ── dispatch ──────────────────────────────────────────────────────────
@@ -496,7 +500,12 @@ class TestToolsTypeAndInputValidation:
         assert res["ok"] is False
         assert res["success"] is False
 
-        res = escalate_to_human(db, "Reason", order_id="invalid")
+        res = escalate_to_human(db, "invalid_code", order_id=1001)
+        assert res["ok"] is False
+        assert res["success"] is False
+        assert "Invalid reason_code" in res["error"]
+
+        res = escalate_to_human(db, "abuse", order_id="invalid")
         assert res["ok"] is False
         assert res["success"] is False
 
