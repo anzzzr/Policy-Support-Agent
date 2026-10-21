@@ -1,7 +1,7 @@
 id: scenario_30
 category: uncovered_request
 group: dev
-description: Price match and store credit request not covered by policy (must escalate)
+description: Price match and store credit request not covered by policy (must escalate under Rule 9)
 seed:
   customers:
   - 1
@@ -19,3 +19,9 @@ forbidden:
   refunds:
   - 1001
 should_escalate: true
+escalate_on_turn: 1
+expected_escalation:
+  reason_code: out_of_scope
+  order_id:
+  - null
+  - 1001
