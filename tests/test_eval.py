@@ -1166,6 +1166,105 @@ class TestResultsMarkdownReport:
         assert res.latency_without_rate_limit_sec == 10.0
 
 
+class TestSummarize:
+    def test_wilson_interval_bounds(self):
+        from eval.summarize import wilson_interval
+
+        low, high = wilson_interval(10, 10)
+        assert 0.70 < low < 0.75
+        assert high == 1.0
+
+        low, high = wilson_interval(0, 10)
+        assert low == 0.0
+        assert 0.25 < high < 0.35
+
+    def test_generate_summary_markdown_with_fixture(self, tmp_path):
+        import json
+        from eval.summarize import generate_summary_markdown, load_published_rows
+
+        run_dir = tmp_path / "dev_B"
+        run_dir.mkdir(parents=True)
+        jsonl_file = run_dir / "results.jsonl"
+
+        rows = [
+            {
+                "scenario_id": "scenario_01",
+                "variant": "B",
+                "group": "dev",
+                "success": True,
+                "policy_violation": False,
+                "should_escalate": False,
+                "did_escalate": False,
+                "latency_sec": 5.0,
+                "tokens": 1000,
+                "tool_errors": {"total": 0},
+                "smoke": False,
+                "model": "test-model",
+                "policy_sha256": "abc123policy",
+                "git_commit": "def456commit",
+            },
+            {
+                "scenario_id": "scenario_02",
+                "variant": "B",
+                "group": "dev",
+                "success": False,
+                "failure_reasons": ["Order not refunded"],
+                "policy_violation": True,
+                "should_escalate": True,
+                "did_escalate": False,
+                "latency_sec": 7.0,
+                "tokens": 1500,
+                "tool_errors": {"total": 1},
+                "smoke": False,
+                "model": "test-model",
+                "policy_sha256": "abc123policy",
+                "git_commit": "def456commit",
+            },
+            {
+                "scenario_id": "heldout_01",
+                "variant": "B",
+                "group": "heldout",
+                "success": True,
+                "policy_violation": False,
+                "should_escalate": True,
+                "did_escalate": True,
+                "latency_sec": 8.0,
+                "tokens": 2000,
+                "tool_errors": {"total": 0},
+                "smoke": False,
+                "model": "test-model",
+                "policy_sha256": "abc123policy",
+                "git_commit": "def456commit",
+            },
+            {
+                "scenario_id": "scenario_99",
+                "variant": "B",
+                "group": "dev",
+                "success": True,
+                "smoke": True,
+            },
+        ]
+
+        with open(jsonl_file, "w") as fp:
+            for r in rows:
+                fp.write(json.dumps(r) + "\n")
+
+        loaded = load_published_rows(tmp_path)
+        assert len(loaded) == 3
+        assert all(r["scenario_id"] != "scenario_99" for r in loaded)
+
+        summary_md = generate_summary_markdown(loaded)
+        assert "# Evaluation Summary" in summary_md
+        assert "test-model" in summary_md
+        assert "abc123policy" in summary_md
+        assert "def456commit" in summary_md
+        assert "scenario_02" in summary_md
+        assert "Order not refunded" in summary_md
+        assert "50.0% (1/2" in summary_md
+        assert "100.0% (1/1" in summary_md
+
+
+
 
 
 
